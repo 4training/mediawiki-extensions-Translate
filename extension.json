@@ -279,7 +279,10 @@
 		"getUserPermissionsErrorsExpensive": "TranslateEditAddons::disallowLangTranslations",
 		"EditPageBeforeEditButtons": "TranslateEditAddons::buttonHack",
 		"LanguageGetTranslatedLanguageNames": "TranslateHooks::translateMessageDocumentationLanguage",
-		"TranslateSupportedLanguages": "TranslateHooks::translateMessageDocumentationLanguage",
+		"TranslateSupportedLanguages": [
+			"TranslateHooks::translateMessageDocumentationLanguage",
+			"TranslateHooks::custom4training"
+		],
 		"ArticlePrepareTextForEdit": "TranslateEditAddons::disablePreSaveTransform",
 		"ParserFirstCallInit": "TranslateHooks::setupTranslateParserFunction",
 		"UserGetReservedNames": "TranslateHooks::onUserGetReservedNames",
