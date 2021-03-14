@@ -499,8 +499,14 @@ class Hooks {
 		$languages = [];
 		$langFactory = MediaWikiServices::getInstance()->getLanguageFactory();
 		foreach ( $status as $code => $percent ) {
+			// #custom4training: Languages having less than 80% translated are only shown to logged-in users
+			$context = RequestContext::getMain();
+			if (($percent < 0.8) && (!$context->getUser()->isAllowed('translate'))) {
+				continue;
+			}
+
 			// Get autonyms (null)
-			$name = TranslateUtils::getLanguageName( $code, null );
+			$name = TranslateUtils::getLanguageName( $code, $userLangCode ); // #custom4training: Show language name in the selected language (not the autonym)
 
 			// Add links to other languages
 			$suffix = ( $code === $sourceLanguage ) ? '' : "/$code";
@@ -587,6 +593,18 @@ class Hooks {
 			[ 'class' => 'mw-pt-languages-list' ],
 			$languages
 		);
+
+
+		// #custom4training: link to more information about the language
+		$currentLanguage = $currentTitle->getPageLanguage()->getCode();
+		$out .= Html::openElement( 'div',
+			array( 'class' => 'mw-pt-languages-label', 'style' => 'border-top: 1px solid grey'));
+		$out .= wfMessage( 'moreinformationabout' )->inLanguage( $userLang )->escaped() . ' ';
+		$out .= Html::rawElement('a',
+			array( 'href' => '/Special:MyLanguage/' . TranslateUtils::getLanguageName($currentLanguage)),
+			TranslateUtils::getLanguageName($currentLanguage, $userLangCode));
+		$out .= Html::closeElement( 'div' );
+
 		$out .= Html::closeElement( 'div' );
 
 		$parser->getOutput()->addModuleStyles( [
@@ -1172,8 +1190,12 @@ class Hooks {
 	}
 
 	private static function sourcePageHeader( IContextSource $context ) {
-		$linker = MediaWikiServices::getInstance()->getLinkRenderer();
+		// #custom4training: Only show "translate this page" etc. header for logged in users with translate rights
+		if (!$context->getUser()->isAllowed('translate')) {
+			return;
+		}
 
+		$linker = MediaWikiServices::getInstance()->getLinkRenderer();
 		$language = $context->getLanguage();
 		$title = $context->getTitle();
 
@@ -1249,6 +1271,11 @@ class Hooks {
 
 	private static function translationPageHeader( IContextSource $context, TranslatablePage $page ) {
 		global $wgTranslateKeepOutdatedTranslations;
+
+		// #custom4training: display "This page is a translated version of ... and is ...% complete" only for logged-in users
+		if (!$context->getUser()->isAllowed('translate')) {
+			return;
+		}
 
 		$title = $context->getTitle();
 		if ( !$title->exists() ) {
