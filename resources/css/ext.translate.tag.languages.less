@@ -1,5 +1,6 @@
 @import 'mediawiki.ui/variables.less';
 
+/* custom4training
 .mw-pt-languages {
 	background-color: #f8f9fa;
 	display: table;
@@ -10,12 +11,13 @@
 	clear: both;
 	overflow: auto;
 }
+*/
 
 /* Visually merge languages box border into translate box where available */
 .mw-pt-translate-header ~ .mw-parser-output .mw-pt-languages {
 	margin-top: -1px;
 }
-
+/* custom4training
 .mw-pt-languages-label {
 	background-color: #eaecf0;
 	padding: 0.5em;
@@ -26,7 +28,7 @@
 /* Increased specificity to override .mw-content-(rtl|ltr) ul { padding: 0; } */
 .mw-pt-languages .mw-pt-languages-list {
 	padding: 0.5em;
-}
+}*/
 
 .mw-pt-languages-list {
 	li {
@@ -49,7 +51,7 @@
 }
 
 .mw-pt-progress {
-	padding-right: 11px;
+	// padding-right: 11px; #custom4training
 	background: transparent right center no-repeat;
 	background-size: 9px 9px;
 }
@@ -65,6 +67,7 @@
 	color: #a55858;
 }
 
+/* custom4training disable
 .mw-pt-progress--stub {
 	background-image: url( ../images/prog-1.png );
 }
@@ -83,13 +86,13 @@
 
 .mw-pt-progress--complete {
 	background-image: url( ../images/prog-5.png );
-}
+}*/
 
 @media screen and ( min-width: @width-breakpoint-tablet ) {
 	.mw-pt-languages-label {
-		display: table-cell;
+		// display: table-cell; #custom4training
 		/* Given `white-space: nowrap` above, label never shrinks underneath textual content. */
-		width: 1%;
+		// width: 1%; #custom4training
 	}
 
 	.mw-pt-languages-list {
