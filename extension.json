@@ -182,7 +182,10 @@
 		"AlternateEdit": "legacyInterface",
 		"getUserPermissionsErrorsExpensive": "TranslateEditAddons::disallowLangTranslations",
 		"LanguageGetTranslatedLanguageNames": "TranslateHooks::translateMessageDocumentationLanguage",
-		"TranslateSupportedLanguages": "TranslateHooks::translateMessageDocumentationLanguage",
+		"TranslateSupportedLanguages": [
+			"TranslateHooks::translateMessageDocumentationLanguage",
+			"TranslateHooks::custom4training"
+		],
 		"ArticlePrepareTextForEdit": "TranslateEditAddons::disablePreSaveTransform",
 		"ParserFirstCallInit": "TranslateHooks::setupTranslateParserFunction",
 		"UserGetReservedNames": "TranslateHooks::onUserGetReservedNames",
