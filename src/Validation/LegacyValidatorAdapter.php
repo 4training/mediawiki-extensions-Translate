@@ -7,10 +7,9 @@
 
 declare( strict_types = 1 );
 
-namespace MediaWiki\Extensions\Translate\Validation;
+namespace MediaWiki\Extension\Translate\Validation;
 
-use InsertablesSuggester;
-use MediaWiki\Extensions\Translate\MessageValidator\Validator;
+use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\InsertablesSuggester;
 use TMessage;
 
 /**
@@ -52,7 +51,7 @@ class LegacyValidatorAdapter implements MessageValidator, InsertablesSuggester {
 	}
 
 	/** @inheritDoc */
-	public function getInsertables( $text ) {
+	public function getInsertables( string $text ): array {
 		if ( $this->validator instanceof InsertablesSuggester ) {
 			return $this->validator->getInsertables( $text );
 		}
@@ -60,3 +59,5 @@ class LegacyValidatorAdapter implements MessageValidator, InsertablesSuggester {
 		return [];
 	}
 }
+
+class_alias( LegacyValidatorAdapter::class, '\MediaWiki\Extensions\Translate\LegacyValidatorAdapter' );

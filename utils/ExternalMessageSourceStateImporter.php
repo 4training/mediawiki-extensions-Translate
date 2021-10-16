@@ -8,7 +8,10 @@
  * @since 2016.02
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Services;
+use MediaWiki\Extension\Translate\Synchronization\MessageUpdateParameter;
+use MediaWiki\MediaWikiServices;
 
 class ExternalMessageSourceStateImporter {
 
@@ -22,13 +25,9 @@ class ExternalMessageSourceStateImporter {
 		$jobs = [];
 		$jobs[] = MessageIndexRebuildJob::newJob();
 
-		/**
-		 * @var MessageSourceChange $changesForGroup
-		 */
+		/** @var MessageSourceChange $changesForGroup */
 		foreach ( $changeData as $groupId => $changesForGroup ) {
-			/**
-			 * @var FileBasedMessageGroup
-			 */
+			/** @var FileBasedMessageGroup */
 			$group = MessageGroups::getGroup( $groupId );
 			if ( !$group ) {
 				unset( $changeData[$groupId] );
@@ -38,10 +37,12 @@ class ExternalMessageSourceStateImporter {
 
 			$processed[$groupId] = [];
 			$languages = $changesForGroup->getLanguages();
+			$groupJobs = [];
+
+			$groupSafeLanguages = self::identifySafeLanguages( $group, $changesForGroup );
 
 			foreach ( $languages as $language ) {
-				if ( !self::isSafe( $changesForGroup, $language ) ) {
-					// changes other than additions were present
+				if ( !$groupSafeLanguages[ $language ] ) {
 					$skipped[$groupId] = true;
 					continue;
 				}
@@ -51,15 +52,20 @@ class ExternalMessageSourceStateImporter {
 					continue;
 				}
 
-				[ $groupJobs, $groupProcessed ] = $this->createMessageUpdateJobs(
+				[ $groupLanguageJobs, $groupProcessed ] = $this->createMessageUpdateJobs(
 					$group, $additions, $language
 				);
 
-				$jobs = array_merge( $jobs, $groupJobs );
+				$groupJobs = array_merge( $groupJobs, $groupLanguageJobs );
 				$processed[$groupId][$language] = $groupProcessed;
 
 				$changesForGroup->removeChangesForLanguage( $language );
 				$group->getMessageGroupCache( $language )->create();
+			}
+
+			if ( $groupJobs !== [] ) {
+				$this->updateGroupSyncInfo( $groupId, $groupJobs );
+				$jobs = array_merge( $jobs, $groupJobs );
 			}
 		}
 
@@ -81,16 +87,6 @@ class ExternalMessageSourceStateImporter {
 			'skipped' => $skipped,
 			'name' => $name,
 		];
-	}
-
-	/**
-	 * Checks if changes for a language in a group are safe.
-	 * @param MessageSourceChange $changesForGroup
-	 * @param string $language
-	 * @return bool
-	 */
-	public static function isSafe( MessageSourceChange $changesForGroup, $language ) {
-		return $changesForGroup->hasOnly( $language, MessageSourceChange::ADDITION );
 	}
 
 	/**
@@ -122,5 +118,112 @@ class ExternalMessageSourceStateImporter {
 		}
 
 		return [ $jobs, $processed ];
+	}
+
+	/**
+	 * @param string $groupId
+	 * @param MessageUpdateJob[] $groupJobs
+	 */
+	private function updateGroupSyncInfo( string $groupId, array $groupJobs ): void {
+		$config = MediaWikiServices::getInstance()->getMainConfig();
+
+		if ( !$config->get( 'TranslateGroupSynchronizationCache' ) ) {
+			return;
+		}
+
+		$messageParams = [];
+		$groupMessageKeys = [];
+		foreach ( $groupJobs as $job ) {
+			$messageParams[] = MessageUpdateParameter::createFromJob( $job );
+			// Ensure there are no duplicates as the same key may be present in
+			// multiple languages
+			$groupMessageKeys[( new MessageHandle( $job->getTitle() ) )->getKey()] = true;
+		}
+
+		$group = MessageGroups::getGroup( $groupId );
+		if ( $group === null ) {
+			// How did we get here? This should never happen.
+			throw new RuntimeException( "Did not find group $groupId" );
+		}
+
+		MessageIndex::singleton()->storeInterim( $group, array_keys( $groupMessageKeys ) );
+
+		$groupSyncCache = Services::getInstance()->getGroupSynchronizationCache();
+		$groupSyncCache->addMessages( $groupId, ...$messageParams );
+		$groupSyncCache->markGroupForSync( $groupId );
+	}
+
+	/**
+	 * Identifies languages in a message group that are safe to import
+	 * @param MessageGroup $group
+	 * @param MessageSourceChange $changesForGroup
+	 * @return bool[]
+	 */
+	private static function identifySafeLanguages(
+		MessageGroup $group,
+		MessageSourceChange $changesForGroup
+	): array {
+		$sourceLanguage = $group->getSourceLanguage();
+		$safeLanguagesMap = [];
+		$modifiedLanguages = $changesForGroup->getLanguages();
+
+		// Set all languages to not safe to start with.
+		$safeLanguagesMap[ $sourceLanguage ] = false;
+		foreach ( $modifiedLanguages as $language ) {
+			$safeLanguagesMap[ $language ] = false;
+		}
+
+		if ( !$changesForGroup->hasOnly( $sourceLanguage, MessageSourceChange::ADDITION ) ) {
+			return $safeLanguagesMap;
+		}
+
+		$sourceLanguageKeyCache = [];
+		foreach ( $changesForGroup->getAdditions( $sourceLanguage ) as $change ) {
+			if ( $change['content'] === '' ) {
+				return $safeLanguagesMap;
+			}
+
+			$sourceLanguageKeyCache[ $change['key'] ] = true;
+		}
+
+		$safeLanguagesMap[ $sourceLanguage ] = true;
+
+		$groupNamespace = $group->getNamespace();
+
+		// Remove source language from the modifiedLanguage list if present since it's already processed.
+		// The $sourceLanguageKeyCache will only have values if sourceLanguage has safe changes.
+		if ( $sourceLanguageKeyCache ) {
+			array_splice( $modifiedLanguages, array_search( $sourceLanguage, $modifiedLanguages ), 1 );
+		}
+
+		foreach ( $modifiedLanguages as $language ) {
+			if ( !$changesForGroup->hasOnly( $language, MessageSourceChange::ADDITION ) ) {
+				continue;
+			}
+
+			foreach ( $changesForGroup->getAdditions( $language ) as $change ) {
+				if ( $change['content'] === '' ) {
+					continue 2;
+				}
+
+				$msgKey = $change['key'];
+
+				if ( !isset( $sourceLanguageKeyCache[ $msgKey ] ) ) {
+					// This is either a new external translation which is not added in the same sync
+					// as the source language key, or this translation does not have a correspoding
+					// definition. We will check the message index to determine which of the two.
+					$sourceHandle = new MessageHandle( Title::makeTitle( $groupNamespace, $msgKey ) );
+					$sourceLanguageKeyCache[ $msgKey ] = $sourceHandle->isValid();
+				}
+
+				if ( !$sourceLanguageKeyCache[ $msgKey ] ) {
+					continue 2;
+				}
+			}
+
+			$safeLanguagesMap[ $language ] = true;
+		}
+
+		return $safeLanguagesMap;
 	}
 }

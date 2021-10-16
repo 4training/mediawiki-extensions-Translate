@@ -17,33 +17,20 @@ use MediaWiki\MediaWikiServices;
 class SpecialPageTranslationDeletePage extends SpecialPage {
 	// Basic form parameters both as text and as titles
 	protected $text;
-
-	/**
-	 * @var Title
-	 */
+	/** @var Title */
 	protected $title;
-
 	// Other form parameters
 	/// 'check' or 'perform'
 	protected $subaction;
-
 	/// There must be reason for everything.
 	protected $reason;
-
 	/// Allow skipping non-translation subpages.
 	protected $doSubpages = false;
-
-	/**
-	 * @var TranslatablePage
-	 */
+	/** @var TranslatablePage */
 	protected $page;
-
 	/// Contains the language code if we are working with translation page
 	protected $code;
-
-	/**
-	 * @var Title[]
-	 */
+	/** @var Title[] */
 	protected $translationPages;
 
 	public function __construct() {
@@ -69,8 +56,7 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 		$this->text = $request->getVal( 'wpTitle', $par );
 		$this->title = Title::newFromText( $this->text );
 		$this->reason = $request->getText( 'wpReason' );
-		// Checkboxes that default being checked are tricky
-		$this->doSubpages = $request->getBool( 'subpages', !$request->wasPosted() );
+		$this->doSubpages = $request->getBool( 'subpages' );
 
 		$user = $this->getUser();
 
@@ -182,8 +168,7 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 
 		$formDescriptor = $this->getCommonFormFields();
 
-		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() );
-		$htmlForm
+		HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() )
 			->addHiddenField( 'wpEditToken', $this->getUser()->getEditToken() )
 			->setMethod( 'post' )
 			->setAction( $this->getPageTitle( $this->text )->getLocalURL() )
@@ -322,7 +307,7 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 			);
 		}
 
-		if ( !$this->doSubpages ) {
+		if ( $this->doSubpages ) {
 			$subpages = $this->getSubpages();
 			foreach ( $subpages as $old ) {
 				if ( TranslatablePage::isTranslationPage( $old ) ) {
@@ -351,11 +336,11 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 
 		JobQueueGroup::singleton()->push( $jobs );
 
-		$cache = wfGetCache( CACHE_DB );
+		$cache = ObjectCache::getInstance( CACHE_DB );
 		$cache->set(
-			wfMemcKey( 'pt-base', $target->getPrefixedText() ),
+			$cache->makeKey( 'pt-base', $target->getPrefixedText() ),
 			array_keys( $jobs ),
-			60 * 60 * 6
+			6 * $cache::TTL_HOUR
 		);
 
 		if ( !$this->singleLanguage() ) {
@@ -372,9 +357,9 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 	protected function clearMetadata() {
 		// remove the entries from metadata table.
 		$groupId = $this->page->getMessageGroupId();
-		TranslateMetadata::set( $groupId, 'prioritylangs', false );
-		TranslateMetadata::set( $groupId, 'priorityforce', false );
-		TranslateMetadata::set( $groupId, 'priorityreason', false );
+		foreach ( TranslatablePage::METADATA_KEYS as $type ) {
+			TranslateMetadata::set( $groupId, $type, false );
+		}
 		// remove the page from aggregate groups, if present in any of them.
 		$aggregateGroups = MessageGroups::getGroupsByType( AggregateMessageGroup::class );
 		TranslateMetadata::preloadGroups( array_keys( $aggregateGroups ) );
@@ -430,9 +415,7 @@ class SpecialPageTranslationDeletePage extends SpecialPage {
 		return $this->title->getSubpages();
 	}
 
-	/**
-	 * @return bool
-	 */
+	/** @return bool */
 	protected function singleLanguage() {
 		return $this->code !== '';
 	}

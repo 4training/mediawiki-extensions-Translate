@@ -8,6 +8,9 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\PageTranslation\TranslatablePageInsertablesSuggester;
+use MediaWiki\Extension\Translate\PageTranslation\TranslationUnit;
+use MediaWiki\Extension\Translate\Validation\ValidationRunner;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\SlotRecord;
 
@@ -16,14 +19,9 @@ use MediaWiki\Revision\SlotRecord;
  * @ingroup PageTranslation MessageGroup
  */
 class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
-	/**
-	 * @var Title|string
-	 */
+	/** @var Title|string */
 	protected $title;
-
-	/**
-	 * @var int
-	 */
+	/** @var int */
 	protected $namespace = NS_TRANSLATIONS;
 
 	/**
@@ -39,9 +37,7 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		return $this->getTitle()->getPageLanguage()->getCode();
 	}
 
-	/**
-	 * @return Title
-	 */
+	/** @return Title */
 	public function getTitle() {
 		if ( is_string( $this->title ) ) {
 			$this->title = Title::newFromText( $this->title );
@@ -56,9 +52,7 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 	 */
 	protected $definitions;
 
-	/**
-	 * @return string[]
-	 */
+	/** @return string[] */
 	public function getDefinitions() {
 		if ( is_array( $this->definitions ) ) {
 			return $this->definitions;
@@ -81,7 +75,7 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		$defs = [];
 
 		foreach ( $res as $r ) {
-			$section = new TPSection();
+			$section = new TranslationUnit();
 			$section->text = $r->trs_text;
 			$defs[$r->trs_key] = $section->getTextWithVariables();
 		}
@@ -171,11 +165,9 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		return ContentHandler::getContentText( $rev->getContent( SlotRecord::MAIN ) );
 	}
 
-	/**
-	 * @return MessageValidator
-	 */
+	/** @return ValidationRunner */
 	public function getValidator() {
-		$validator = new MessageValidator( $this->getId() );
+		$validator = new ValidationRunner( $this->getId() );
 		$validator->setValidators( [
 			[ 'id' => 'MediaWikiPlural' ],
 			[ 'id' => 'BraceBalance' ]

@@ -7,11 +7,9 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 
-/**
- * @group Database
- */
+/** @group Database */
 class ApiGroupReviewTest extends MediaWikiIntegrationTestCase {
 	public function testGetSetState() {
 		$group = new WikiMessageGroup( 'testgroup', 'wewgweg' );

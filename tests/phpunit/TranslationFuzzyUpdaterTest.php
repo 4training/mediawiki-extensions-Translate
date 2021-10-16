@@ -14,7 +14,7 @@ use MediaWiki\Revision\RevisionRecord;
  * @group medium
  */
 class TranslationFuzzyUpdaterTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [
@@ -48,9 +48,7 @@ class TranslationFuzzyUpdaterTest extends MediaWikiIntegrationTestCase {
 		$content = ContentHandler::makeContent( '$1 van $2', $title );
 		$status = $page->doEditContent( $content, __METHOD__ );
 		$value = $status->getValue();
-		/**
-		 * @var RevisionRecord $revisionRecord
-		 */
+		/** @var RevisionRecord $revisionRecord */
 		$revisionRecord = $value['revision-record'];
 		$revisionId = $revisionRecord->getId();
 

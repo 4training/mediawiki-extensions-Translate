@@ -10,7 +10,7 @@
 use MediaWiki\Auth\AuthenticationRequest;
 use MediaWiki\Auth\AuthenticationResponse;
 use MediaWiki\Auth\AuthManager;
-use MediaWiki\Extensions\Translate\SystemUsers\TranslateUserManager;
+use MediaWiki\Extension\Translate\SystemUsers\TranslateUserManager;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\ScopedCallback;
 
@@ -19,8 +19,6 @@ use Wikimedia\ScopedCallback;
  * lot of assumptions about what happens to the user account.
  */
 class TranslateSandbox {
-	public static $userToCreate = null;
-
 	/**
 	 * Adds a new user without doing much validation.
 	 *
@@ -83,7 +81,12 @@ class TranslateSandbox {
 		}
 
 		// group-translate-sandboxed group-translate-sandboxed-member
-		$user->addGroup( 'translate-sandboxed' );
+		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
+			// MediaWiki 1.35+
+			MediaWikiServices::getInstance()->getUserGroupManager()->addUserToGroup( $user, 'translate-sandboxed' );
+		} else {
+			$user->addGroup( 'translate-sandboxed' );
+		}
 
 		return $user;
 	}
@@ -170,9 +173,20 @@ class TranslateSandbox {
 			throw new MWException( 'Not a sandboxed user' );
 		}
 
-		$user->removeGroup( 'translate-sandboxed' );
-		if ( $wgTranslateSandboxPromotedGroup ) {
-			$user->addGroup( $wgTranslateSandboxPromotedGroup );
+		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
+			// MediaWiki 1.35+
+			$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
+			$userGroupManager->removeUserFromGroup( $user, 'translate-sandboxed' );
+
+			if ( $wgTranslateSandboxPromotedGroup ) {
+				$userGroupManager->addUserToGroup( $user, $wgTranslateSandboxPromotedGroup );
+			}
+		} else {
+			$user->removeGroup( 'translate-sandboxed' );
+
+			if ( $wgTranslateSandboxPromotedGroup ) {
+				$user->addGroup( $wgTranslateSandboxPromotedGroup );
+			}
 		}
 
 		$user->setOption( 'translate-sandbox-reminders', '' );
@@ -247,11 +261,15 @@ class TranslateSandbox {
 	 * @since 2013.06
 	 */
 	public static function isSandboxed( User $user ) {
-		if ( in_array( 'translate-sandboxed', $user->getGroups(), true ) ) {
-			return true;
+		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
+			// MediaWiki 1.35+
+			$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
+			$groups = $userGroupManager->getUserGroups( $user );
+		} else {
+			$groups = $user->getGroups();
 		}
 
-		return false;
+		return in_array( 'translate-sandboxed', $groups, true );
 	}
 
 	/**

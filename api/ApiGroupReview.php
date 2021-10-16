@@ -82,7 +82,7 @@ class ApiGroupReview extends ApiBase {
 		}
 
 		$table = 'translate_groupreviews';
-		$index = [ 'tgr_group', 'tgr_language' ];
+		$index = [ 'tgr_group', 'tgr_lang' ];
 		$row = [
 			'tgr_group' => $group->getId(),
 			'tgr_lang' => $code,
@@ -121,7 +121,7 @@ class ApiGroupReview extends ApiBase {
 		return 'csrf';
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		return [
 			'group' => [
 				ApiBase::PARAM_TYPE => 'string',

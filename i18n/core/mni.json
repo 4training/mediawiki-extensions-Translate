@@ -1,9 +1,12 @@
 {
 	"@metadata": {
 		"authors": [
+			"Afingba Mangang",
 			"Amire80",
-			"Awangba Mangang"
+			"Awangba Mangang",
+			"Luwanglinux"
 		]
 	},
-	"translate-documentation-language": "Documentationda paojel thao"
+	"translate-smg-group-message-tag-label": "{{PLURAL:$1|ꯊꯦꯠꯄꯥ |ꯊꯦꯠꯄꯥꯁꯤꯡ}}:",
+	"translate-documentation-language": "ꯗꯣꯀꯨꯃꯦꯟꯇꯦꯁꯟꯗ ꯄꯥꯎꯖꯦꯜ ꯊꯥꯎ"
 }

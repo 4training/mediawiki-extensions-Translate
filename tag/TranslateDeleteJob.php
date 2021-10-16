@@ -8,7 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 
 /**
  * Contains class with job for deleting translatable and translation pages.
@@ -60,9 +60,11 @@ class TranslateDeleteJob extends Job {
 
 		$error = '';
 		$wikipage = new WikiPage( $title );
-		if ( version_compare( MW_VERSION, '1.35', '<' ) ) {
+		if ( version_compare( TranslateUtils::getMWVersion(), '1.35', '<' ) ) {
 			$status = $wikipage->doDeleteArticleReal(
 				"{$summary}: $reason",
+				// https://phabricator.wikimedia.org/T262800
+				// @phan-suppress-next-line PhanTypeMismatchArgumentReal
 				false,
 				0,
 				true,
@@ -104,11 +106,12 @@ class TranslateDeleteJob extends Job {
 
 		PageTranslationHooks::$allowTargetEdit = false;
 
-		$cache = wfGetCache( CACHE_DB );
-		$pages = (array)$cache->get( wfMemcKey( 'pt-base', $base ) );
+		$cache = ObjectCache::getInstance( CACHE_DB );
+		$pageKey = $cache->makeKey( 'pt-base', $base );
+		$pages = (array)$cache->get( $pageKey );
 		$lastitem = array_pop( $pages );
 		if ( $title->getPrefixedText() === $lastitem ) {
-			$cache->delete( wfMemcKey( 'pt-base', $base ) );
+			$cache->delete( $pageKey );
 
 			$type = $this->getFull() ? 'deletefok' : 'deletelok';
 			$entry = new ManualLogEntry( 'pagetranslation', $type );
@@ -154,9 +157,7 @@ class TranslateDeleteJob extends Job {
 		return $this->params['full'];
 	}
 
-	/**
-	 * @param User|string $performer
-	 */
+	/** @param User|string $performer */
 	public function setPerformer( $performer ) {
 		if ( is_object( $performer ) ) {
 			$this->params['performer'] = $performer->getName();
@@ -169,9 +170,7 @@ class TranslateDeleteJob extends Job {
 		return $this->params['performer'];
 	}
 
-	/**
-	 * @param User|string $user
-	 */
+	/** @param User|string $user */
 	public function setUser( $user ) {
 		if ( is_object( $user ) ) {
 			$this->params['user'] = $user->getName();

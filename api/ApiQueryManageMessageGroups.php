@@ -6,8 +6,8 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
-use MediaWiki\Extensions\Translate\Utilities\StringComparators\SimpleStringComparator;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Utilities\StringComparators\SimpleStringComparator;
 
 /**
  * API module for querying message group changes.
@@ -114,7 +114,7 @@ class ApiQueryManageMessageGroups extends ApiQueryBase {
 		return $renameList;
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		$params = parent::getAllowedParams();
 		$params['groupId'] = [
 			ApiBase::PARAM_TYPE => 'string',

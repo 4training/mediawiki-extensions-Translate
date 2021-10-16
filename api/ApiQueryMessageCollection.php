@@ -14,6 +14,10 @@
  */
 class ApiQueryMessageCollection extends ApiQueryGeneratorBase {
 
+	/**
+	 * @param ApiQuery $query
+	 * @param string $moduleName
+	 */
 	public function __construct( $query, $moduleName ) {
 		parent::__construct( $query, $moduleName, 'mc' );
 	}
@@ -75,9 +79,7 @@ class ApiQueryMessageCollection extends ApiQueryGeneratorBase {
 		}
 
 		if ( MessageGroups::isDynamic( $group ) ) {
-			/**
-			 * @var RecentMessageGroup $group
-			 */
+			/** @var RecentMessageGroup $group */
 			// @phan-suppress-next-line PhanUndeclaredMethod
 			$group->setLanguage( $params['language'] );
 		}
@@ -225,7 +227,7 @@ class ApiQueryMessageCollection extends ApiQueryGeneratorBase {
 		);
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		return [
 			'group' => [
 				ApiBase::PARAM_TYPE => 'string',

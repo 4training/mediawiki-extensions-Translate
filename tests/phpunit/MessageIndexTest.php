@@ -14,7 +14,7 @@ use Wikimedia\TestingAccessWrapper;
  * @group large
  */
 class MessageIndexTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		$this->setMwGlobals( [
 			'wgTranslateCacheDirectory' => $this->getNewTempDirectory(),
@@ -48,9 +48,7 @@ class MessageIndexTest extends MediaWikiIntegrationTestCase {
 		yield [ [ 'SerializedMessageIndex' ], SerializedMessageIndex::class ];
 	}
 
-	/**
-	 * @dataProvider provideTranslateMessageIndexConfig
-	 */
+	/** @dataProvider provideTranslateMessageIndexConfig */
 	public function testSingleton( $configValue, $expectedClass ) {
 		$this->setMwGlobals( [
 			'wgTranslateMessageIndex' => $configValue,
@@ -63,9 +61,7 @@ class MessageIndexTest extends MediaWikiIntegrationTestCase {
 		$this->assertInstanceOf( $expectedClass, $object );
 	}
 
-	/**
-	 * @dataProvider provideTestGetArrayDiff
-	 */
+	/** @dataProvider provideTestGetArrayDiff */
 	public function testGetArrayDiff( $expected, $old, $new ) {
 		$actual = MessageIndex::getArrayDiff( $old, $new );
 		$this->assertEquals( $expected['keys'], $actual['keys'], 'key diff' );
@@ -165,9 +161,7 @@ class MessageIndexTest extends MediaWikiIntegrationTestCase {
 		return $data;
 	}
 
-	/**
-	 * @dataProvider provideMessageIndexImplementation
-	 */
+	/** @dataProvider provideMessageIndexImplementation */
 	public function testMessageIndexImplementation( $mi ) {
 		$data = self::getTestData();
 		/** @var TestableDatabaseMessageIndex|TestableCDBMessageIndex|TestableSerializedMessageIndex */
@@ -194,7 +188,7 @@ class MessageIndexTest extends MediaWikiIntegrationTestCase {
 			);
 		}
 
-		$this->assertEquals(
+		$this->assertSame(
 			count( $data ),
 			count( $cached ),
 			'Cache has same number of elements'

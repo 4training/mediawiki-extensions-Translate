@@ -5,13 +5,16 @@
 			"Malafaya"
 		]
 	},
+	"tpt-diff-old": "Antea texto",
+	"tpt-diff-new": "Nova texto",
+	"tpt-tag-oldsyntax": "anciena sintaxo",
 	"tpt-select-prioritylangs-reason": "Motivo:",
+	"tpt-sections-syntaxversion": "Versiono di la sintaxo",
 	"tpt-rev-encourage": "restaurar",
 	"translate-tag-translate-link-desc": "Tradukar ca pagino",
 	"tpt-languages-legend": "Altra lingui:",
 	"tpt-languages-nonzero": "$1 ($2% tradukita)",
 	"tpt-tab-translate": "Tradukar",
-	"tpt-discouraged-language-reason": "Motivo: $1",
 	"tpt-aggregategroup-new-description": "Deskripto (fakultativa):",
 	"tpt-aggregategroup-update-cancel": "Nuligar",
 	"log-name-pagetranslation": "Protokolo ('log') pri tradukajo",

@@ -38,6 +38,11 @@
 	right: 0;
 }
 
+/** Added to override hover style added by Timeless */
+.mw-translate-smg-change .smg-rename-actions:hover {
+	background-color: transparent;
+}
+
 .mw-translate-smg-change .smg-rename-actions.loading {
 	background: transparent url( ../images/loading.gif ) center center no-repeat;
 	background-size: 90%;
@@ -47,14 +52,20 @@
 	padding: 0.75em 0.5em 0 0.5em;
 }
 
-.mw-translate-smg-submit {
-	font-size: 5em;
-	margin: auto;
-	width: 80%;
+.oo-ui-buttonElement.mw-translate-smg-submit {
 	display: block;
 }
 
-.diff-lineno {
+.oo-ui-buttonElement.mw-translate-smg-submit button {
+	font-size: 3em;
+	margin: auto;
+	width: 80%;
+	display: block;
+	word-wrap: break-word;
+	white-space: pre-wrap;
+}
+
+.mw-translate-smg-change .diff-lineno {
 	display: none;
 }
 
@@ -63,8 +74,17 @@
 	font-weight: bold;
 }
 
+.mw-translate-hide {
+	display: none;
+}
+
 .warningbox.mw-translate-smg-submitted {
 	margin-top: 2.5em;
+}
+
+.mw-translate-smg-change .mw-translate-smg-notice-important {
+	background: #fbb;
+	border: 1px solid #f58d8d;
 }
 
 /**************************
@@ -85,7 +105,8 @@
 	display: block;
 }
 
-.smg-rename-dropdown-menu button {
+/* Additional class to override CSS from skins */
+.smg-rename-dropdown-menu.smg-rename-dropdown-menu button {
 	display: block;
 	background: none;
 	border: 0;
@@ -95,10 +116,36 @@
 	white-space: nowrap;
 	color: #222;
 	font-size: 14px;
+	font-weight: normal;
 }
 
-.smg-rename-dropdown-menu button:hover {
+.smg-rename-dropdown-menu.smg-rename-dropdown-menu button:hover {
 	cursor: pointer;
 	background-color: #f0f0f0;
 	color: #222;
+}
+
+.smg-group-sync-cache-info {
+	padding: 0.5em 1em;
+	background: #f0f0f0;
+	border-radius: 3px;
+	margin-bottom: 1em;
+}
+
+.smg-group-sync-cache-info__help {
+	position: absolute;
+	right: 1em;
+}
+
+.smg-group-sync-cache-info__group-errors {
+	margin-bottom: 0.5em;
+	background-color: #e0e0e0;
+	padding: 0.5em 1em;
+	border-radius: 3px;
+}
+
+.smg-group-sync-cache-info__message-error dt {
+	float: left;
+	text-align: right;
+	margin-right: 5px;
 }

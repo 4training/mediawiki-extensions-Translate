@@ -9,7 +9,8 @@
  * @file
  */
 
-use MediaWiki\Extensions\Translate\Utilities\GettextPlural;
+use MediaWiki\Extension\Translate\Utilities\GettextPlural;
+use MediaWiki\Logger\LoggerFactory;
 
 /**
  * New-style FFS class that implements support for gettext file format.
@@ -26,9 +27,7 @@ class GettextFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 
 	protected $offlineMode = false;
 
-	/**
-	 * @param bool $value
-	 */
+	/** @param bool $value */
 	public function setOfflineMode( $value ) {
 		$this->offlineMode = $value;
 	}
@@ -104,7 +103,8 @@ class GettextFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 				$potmode = true;
 			}
 		} else {
-			throw new MWException( "Gettext file header was not found:\n\n$data" );
+			$message = "Gettext file header was not found:\n\n$data";
+			throw new GettextParseException( $message );
 		}
 
 		$template = [];
@@ -358,7 +358,7 @@ class GettextFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 			if ( strpos( $line, ':' ) === false ) {
 				error_log( __METHOD__ . ": $line" );
 			}
-			list( $key, $value ) = explode( ':', $line, 2 );
+			[ $key, $value ] = explode( ':', $line, 2 );
 			$tags[trim( $key )] = trim( $value );
 		}
 
@@ -366,23 +366,26 @@ class GettextFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 	}
 
 	protected function writeReal( MessageCollection $collection ) {
-		$pot = $this->read( 'en' )['EXTRA'];
+		// FIXME: this should be the source language
+		$pot = $this->read( 'en' ) ?? [];
 		$code = $collection->code;
-		$template = $this->read( $code )['EXTRA'];
-		$pluralCount = false;
-		$output = $this->doGettextHeader( $collection, $template );
+		$template = $this->read( $code ) ?? [];
+		$output = $this->doGettextHeader( $collection, $template['EXTRA'] ?? [] );
 
 		$pluralRule = GettextPlural::getPluralRule( $code );
 		if ( !$pluralRule ) {
 			$pluralRule = GettextPlural::getPluralRule( 'en' );
-			error_log( "Missing plural rule for code $code" );
+			LoggerFactory::getInstance( 'Translate' )->warning(
+				"T235180: Missing Gettext plural rule for '{languagecode}'",
+				[ 'languagecode' => $code ]
+			);
 		}
 		$pluralCount = GettextPlural::getPluralCount( $pluralRule );
 
 		/** @var TMessage $m */
 		foreach ( $collection as $key => $m ) {
-			$transTemplate = $template['TEMPLATE'][$key] ?? [];
-			$potTemplate = $pot['TEMPLATE'][$key] ?? [];
+			$transTemplate = $template['EXTRA']['TEMPLATE'][$key] ?? [];
+			$potTemplate = $pot['EXTRA']['TEMPLATE'][$key] ?? [];
 
 			$output .= $this->formatMessageBlock( $key, $m, $transTemplate, $potTemplate, $pluralCount );
 		}

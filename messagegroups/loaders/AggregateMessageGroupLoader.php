@@ -19,18 +19,12 @@ class AggregateMessageGroupLoader extends MessageGroupLoader
 	implements CachedMessageGroupLoader {
 
 	private const CACHE_KEY = 'aggregate';
-	private const CACHE_VERSION = 1;
+	private const CACHE_VERSION = 2;
 
-	/**
-	 * @var MessageGroupWANCache
-	 */
+	/** @var MessageGroupWANCache */
 	protected $cache;
-
-	/**
-	 * @var IDatabase
-	 */
+	/** @var IDatabase */
 	protected $db;
-
 	/**
 	 * List of groups
 	 * @var array|null

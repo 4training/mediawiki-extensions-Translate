@@ -27,9 +27,7 @@ class IniFFSTest extends MediaWikiIntegrationTestCase {
 	public function testParsing() {
 		$file = file_get_contents( __DIR__ . '/../data/IniFFSTest1.ini' );
 
-		/**
-		 * @var FileBasedMessageGroup $group
-		 */
+		/** @var FileBasedMessageGroup $group */
 		$group = MessageGroupBase::factory( $this->groupConfiguration );
 		$ffs = new IniFFS( $group );
 
@@ -48,6 +46,9 @@ class IniFFSTest extends MediaWikiIntegrationTestCase {
 			'AUTHORS' => [ 'The king of very small kingdom' ]
 		];
 		$this->assertEquals( $expected, $parsed );
+
+		$invalidContent = 'Invalid-Ini-Content';
+		$this->assertFalse( IniFFS::isValid( $invalidContent ) );
 	}
 
 	public function testExport() {
@@ -56,9 +57,7 @@ class IniFFSTest extends MediaWikiIntegrationTestCase {
 		$file = str_replace( '$wgSitename', $wgSitename, $file );
 
 		$collection = new MockMessageCollectionForExport();
-		/**
-		 * @var FileBasedMessageGroup $group
-		 */
+		/** @var FileBasedMessageGroup $group */
 		$group = MessageGroupBase::factory( $this->groupConfiguration );
 		$ffs = new IniFFS( $group );
 		$this->assertEquals( $file, $ffs->writeIntoVariable( $collection ) );

@@ -1,12 +1,10 @@
 <?php
 
 class FileBasedMessageGroupLoaderTest extends MediaWikiIntegrationTestCase {
-	/**
-	 * @var FileBasedMessageGroupLoader
-	 */
+	/** @var FileBasedMessageGroupLoader */
 	protected $mgFileLoader;
 
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$conf = [

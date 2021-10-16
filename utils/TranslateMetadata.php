@@ -14,9 +14,7 @@ class TranslateMetadata {
 	/** @var array Map of (group => key => value) */
 	private static $cache = [];
 
-	/**
-	 * @param string[] $groups List of translate groups
-	 */
+	/** @param string[] $groups List of translate groups */
 	public static function preloadGroups( array $groups ) {
 		$missing = array_keys( array_diff_key( array_flip( $groups ), self::$cache ) );
 		if ( !$missing ) {
@@ -93,12 +91,12 @@ class TranslateMetadata {
 	/**
 	 * Wrapper for getting subgroups.
 	 * @param string $groupId
-	 * @return string[]|bool
+	 * @return string[]|null
 	 * @since 2012-05-09
 	 */
-	public static function getSubgroups( $groupId ) {
+	public static function getSubgroups( string $groupId ): ?array {
 		$groups = self::get( $groupId, 'subgroups' );
-		if ( $groups !== false ) {
+		if ( is_string( $groups ) ) {
 			if ( strpos( $groups, '|' ) !== false ) {
 				$groups = explode( '|', $groups );
 			} else {
@@ -110,6 +108,8 @@ class TranslateMetadata {
 					unset( $groups[$index] );
 				}
 			}
+		} else {
+			$groups = null;
 		}
 
 		return $groups;

@@ -285,17 +285,17 @@
 				} );
 
 				setTimeout( function () {
-					var offset, $icon = $( '.autotooltip:visible' );
-					if ( !$icon.length ) {
+					var offset, $visibleIcon = $( '.autotooltip:visible' );
+					if ( !$visibleIcon.length ) {
 						return;
 					}
 
-					offset = $icon.offset();
+					offset = $visibleIcon.offset();
 					tooltip.$element.appendTo( document.body );
 					tooltip.toggle( true ).toggleClipping( false ).togglePositioning( false );
 					tooltip.$element.css( {
-						top: offset.top + $icon.outerHeight() + 5,
-						left: offset.left + $icon.outerWidth() - tooltip.$element.width() / 2 - 15
+						top: offset.top + $visibleIcon.outerHeight() + 5,
+						left: offset.left + $visibleIcon.outerWidth() - tooltip.$element.width() / 2 - 15
 					} );
 
 					setTimeout( function () {
@@ -383,10 +383,14 @@
 		},
 
 		resize: function () {
-			var actualWidth = 0;
+			var actualWidth = 0, $messageSelector = $( '.row.tux-message-selector' );
+
+			if ( $messageSelector.is( ':hidden' ) ) {
+				return;
+			}
 
 			// Calculate the total width required for the filters
-			$( '.row.tux-message-selector > li' ).each( function () {
+			$messageSelector.children( 'li' ).each( function () {
 				actualWidth += $( this ).outerWidth( true );
 			} );
 
@@ -505,7 +509,7 @@
 					}
 				}
 
-				$.each( messages, function ( index, message ) {
+				messages.forEach( function ( message, index ) {
 					message.group = self.settings.group;
 					self.add( message );
 					self.messages.push( message );
@@ -775,7 +779,7 @@
 			}
 
 			if ( messageTable.messages.length ) {
-				$.each( messageTable.messages, function ( index, message ) {
+				messageTable.messages.forEach( function ( message ) {
 					messageTable.add( message );
 				} );
 			} else if ( messageTable.initialized && !messageTable.loading ) {
@@ -851,7 +855,7 @@
 			var $warningContainer = $( '.tux-editor-header .group-warning' );
 
 			if ( errors ) {
-				$.map( errors, function ( error ) {
+				errors.forEach( function ( error ) {
 					$warningContainer.append( error.html );
 				} );
 			} else {

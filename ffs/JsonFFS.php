@@ -27,9 +27,7 @@ class JsonFFS extends SimpleFFS {
 		return is_array( FormatJson::decode( $data, /*as array*/true ) );
 	}
 
-	/**
-	 * @param FileBasedMessageGroup $group
-	 */
+	/** @param FileBasedMessageGroup $group */
 	public function __construct( FileBasedMessageGroup $group ) {
 		parent::__construct( $group );
 		$this->flattener = $this->getFlattener();
@@ -88,9 +86,7 @@ class JsonFFS extends SimpleFFS {
 
 		$mangler = $this->group->getMangler();
 
-		/**
-		 * @var $m TMessage
-		 */
+		/** @var TMessage $m */
 		foreach ( $collection as $key => $m ) {
 			$value = $m->translation();
 			if ( $value === null ) {

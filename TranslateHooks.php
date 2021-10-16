@@ -7,8 +7,12 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
-use MediaWiki\Extensions\Translate\SystemUsers\TranslateUserManager;
+use MediaWiki\Config\ServiceOptions;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\TranslateUserManager;
+use MediaWiki\Extension\Translate\TranslatorSandbox\ManageTranslatorSandboxSpecialPage;
+use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashSpecialPage;
+use MediaWiki\Hook\BeforeParserFetchTemplateRevisionRecordHook;
 use MediaWiki\Hook\PageMoveCompleteHook;
 use MediaWiki\Hook\SidebarBeforeOutputHook;
 use MediaWiki\MediaWikiServices;
@@ -32,7 +36,7 @@ class TranslateHooks {
 	 * Do late setup that depends on configuration.
 	 */
 	public static function setupTranslate() {
-		global $wgTranslatePHPlot, $wgAutoloadClasses, $wgHooks, $wgTranslateYamlLibrary;
+		global $wgHooks, $wgTranslateYamlLibrary;
 
 		/*
 		 * Text that will be shown in translations if the translation is outdated.
@@ -46,11 +50,7 @@ class TranslateHooks {
 			$wgTranslateYamlLibrary = function_exists( 'yaml_parse' ) ? 'phpyaml' : 'spyc';
 		}
 
-		if ( $wgTranslatePHPlot ) {
-			$wgAutoloadClasses['PHPlot'] = $wgTranslatePHPlot;
-		}
-
-		$usePageSaveComplete = version_compare( MW_VERSION, '1.35', '>=' );
+		$usePageSaveComplete = version_compare( TranslateUtils::getMWVersion(), '1.35', '>=' );
 		if ( $usePageSaveComplete ) {
 			$wgHooks['PageSaveComplete'][] = 'TranslateEditAddons::onSaveComplete';
 		} else {
@@ -154,6 +154,11 @@ class TranslateHooks {
 			$wgHooks['ParserOutputPostCacheTransform'][] =
 				'PageTranslationHooks::onParserOutputPostCacheTransform';
 
+			if ( interface_exists( BeforeParserFetchTemplateRevisionRecordHook::class ) ) {
+				$wgHooks['BeforeParserFetchTemplateRevisionRecord'][] =
+					'PageTranslationHooks::fetchTranslatableTemplateAndTitle';
+			}
+
 			// Set the page content language
 			$wgHooks['PageContentLanguage'][] = 'PageTranslationHooks::onPageContentLanguage';
 
@@ -199,8 +204,35 @@ class TranslateHooks {
 		if ( $wgTranslateUseSandbox ) {
 			global $wgSpecialPages, $wgAvailableRights, $wgDefaultUserOptions;
 
-			$wgSpecialPages['ManageTranslatorSandbox'] = 'SpecialManageTranslatorSandbox';
-			$wgSpecialPages['TranslationStash'] = 'SpecialTranslationStash';
+			$wgSpecialPages['ManageTranslatorSandbox'] = [
+				'class' => ManageTranslatorSandboxSpecialPage::class,
+				'services' => [
+					'Translate:TranslationStashReader',
+				],
+				'args' => [
+					function () {
+						return new ServiceOptions(
+							ManageTranslatorSandboxSpecialPage::CONSTRUCTOR_OPTIONS,
+							MediaWikiServices::getInstance()->getMainConfig()
+						);
+					}
+				]
+			];
+			$wgSpecialPages['TranslationStash'] = [
+				'class' => TranslationStashSpecialPage::class,
+				'services' => [
+					'LanguageNameUtils',
+					'Translate:TranslationStashReader'
+				],
+				'args' => [
+					function () {
+						return new ServiceOptions(
+							TranslationStashSpecialPage::CONSTRUCTOR_OPTIONS,
+							MediaWikiServices::getInstance()->getMainConfig()
+						);
+					}
+				]
+			];
 			$wgDefaultUserOptions['translate-sandbox'] = '';
 			// right-translate-sandboxmanage action-translate-sandboxmanage
 			$wgAvailableRights[] = 'translate-sandboxmanage';
@@ -269,17 +301,12 @@ class TranslateHooks {
 	 * Used for setting an AbuseFilter variable.
 	 *
 	 * @param AbuseFilterVariableHolder &$vars
-	 * @param Title|null $title
-	 * @todo Remove "AbuseFilter-filterAction" from extension.json once we support 1.34+ only.
-	 *  At that point, add a $user parameter to this handler, add typehints on all arguments
-	 *  (including $title which will always be a Title), and remove the logging below.
+	 * @param Title $title
+	 * @param User $user
 	 */
-	public static function onAbuseFilterAlterVariables( &$vars, $title ) {
-		if ( !$title instanceof Title ) {
-			wfDebugLog( 'T143073', 'Got non-Title in ' . wfGetAllCallers( 5 ) );
-			return;
-		}
-
+	public static function onAbuseFilterAlterVariables(
+		&$vars, Title $title, User $user
+	) {
 		$handle = new MessageHandle( $title );
 
 		// Only set this variable if we are in a proper namespace to avoid
@@ -453,6 +480,13 @@ class TranslateHooks {
 			'PRIMARY',
 			false,
 			"$dir/translate_reviews-patch-01-primary-key.sql",
+			true
+		] );
+
+		$updater->addExtensionUpdate( [
+			'addTable',
+			'translate_cache',
+			"$dir/translate_cache.sql",
 			true
 		] );
 	}
@@ -848,17 +882,12 @@ class TranslateHooks {
 		return '';
 	}
 
-	/**
-	 * @param ResourceLoader $resourceLoader
-	 */
+	/** @param ResourceLoader $resourceLoader */
 	public static function onResourceLoaderRegisterModules( ResourceLoader $resourceLoader ) {
-		global $wgVersion;
-
-		// Support: MediaWiki <= 1.33
-		$hasOldJqUI = version_compare( $wgVersion, '1.34', '<' );
-
 		// Support: MediaWiki <= 1.34
-		$hasOldTokens = $hasOldNotify = version_compare( $wgVersion, '1.35', '<' );
+		$hasOldTokens = $hasOldNotify = version_compare(
+			TranslateUtils::getMWVersion(), '1.35', '<'
+		);
 
 		$tpl = [
 			'localBasePath' => __DIR__,
@@ -880,7 +909,7 @@ class TranslateHooks {
 					'ext.translate.base',
 					'ext.translate.loader',
 					'ext.translate.statsbar',
-					$hasOldJqUI ? 'jquery.ui.position' : 'jquery.ui',
+					'jquery.ui',
 					'mediawiki.jqueryMsg'
 				],
 				'messages' => [
@@ -890,16 +919,10 @@ class TranslateHooks {
 					'translate-msggroupselector-view-subprojects'
 				]
 			],
-			'ext.translate.multiselectautocomplete' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.multiselectautocomplete.js',
-				'dependencies' => [
-					$hasOldJqUI ? 'jquery.ui.autocomplete' : 'jquery.ui',
-				]
-			],
 			'ext.translate.special.aggregategroups' => $tpl + [
 				'scripts' => 'resources/js/ext.translate.special.aggregategroups.js',
 				'dependencies' => [
-					$hasOldJqUI ? 'jquery.ui.autocomplete' : 'jquery.ui',
+					'jquery.ui',
 					'mediawiki.api',
 					'mediawiki.util'
 				],
@@ -916,7 +939,7 @@ class TranslateHooks {
 			'ext.translate.special.importtranslations' => $tpl + [
 				'scripts' => 'resources/js/ext.translate.special.importtranslations.js',
 				'dependencies' => [
-					$hasOldJqUI ? 'jquery.ui.autocomplete' : 'jquery.ui',
+					'jquery.ui',
 				]
 			],
 			'ext.translate.special.managetranslatorsandbox' => $tpl + [
@@ -925,7 +948,7 @@ class TranslateHooks {
 					'ext.translate.loader',
 					'ext.translate.translationstashstorage',
 					'ext.uls.mediawiki',
-					$hasOldJqUI ? 'jquery.ui.dialog' : 'jquery.ui',
+					'jquery.ui',
 					'mediawiki.api',
 					'mediawiki.jqueryMsg',
 					'mediawiki.language',
@@ -957,15 +980,20 @@ class TranslateHooks {
 			'ext.translate.special.searchtranslations.operatorsuggest' => $tpl + [
 				'scripts' => 'resources/js/ext.translate.special.operatorsuggest.js',
 				'dependencies' => [
-					$hasOldJqUI ? 'jquery.ui.autocomplete' : 'jquery.ui',
+					'jquery.ui',
 				]
 			],
 			'ext.translate.special.pagetranslation' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.special.pagetranslation.js',
+				'packageFiles' => [
+					'resources/js/ext.translate.special.pagetranslation.js',
+					'resources/js/LanguagesMultiselectWidget.js'
+				],
 				'dependencies' => [
-					'ext.translate.multiselectautocomplete',
-					'mediawiki.ui.button',
 					'mediawiki.Uri',
+					'mediawiki.api',
+					'mediawiki.ui.button',
+					'mediawiki.widgets',
+					'oojs-ui-widgets',
 					$hasOldTokens ? 'user.tokens' : 'user.options',
 				],
 				'targets' => [
@@ -974,6 +1002,8 @@ class TranslateHooks {
 			],
 			"ext.translate.editor" => $tpl + [
 				"scripts" => [
+					"resources/js/ext.translate.storage.js",
+					"resources/lib/jquery.autosize.js",
 					"resources/js/ext.translate.editor.helpers.js",
 					"resources/js/ext.translate.editor.js",
 					"resources/js/ext.translate.editor.shortcuts.js",
@@ -988,8 +1018,6 @@ class TranslateHooks {
 				"dependencies" => array_merge( [
 					"ext.translate.base",
 					"ext.translate.dropdownmenu",
-					"ext.translate.storage",
-					"jquery.autosize",
 					"jquery.makeCollapsible",
 					"jquery.textSelection",
 					"jquery.textchange",
@@ -1131,6 +1159,7 @@ class TranslateHooks {
 
 			$validationResponse = $messageValidator->validateMessage( $message, $handle->getCode() );
 			if ( $validationResponse->hasErrors() ) {
+				// @phan-suppress-next-line SecurityCheck-DoubleEscaped
 				$status->fatal( new \ApiRawMessage(
 					$context->msg( 'translate-syntax-error' )->parse(),
 					'translate-validation-failed',

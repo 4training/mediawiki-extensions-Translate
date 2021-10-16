@@ -1,18 +1,14 @@
 <?php
 
-namespace MediaWiki\Extensions\Translate\Synchronization;
+namespace MediaWiki\Extension\Translate\Synchronization;
 
 use MediaWikiUnitTestCase;
 use MessageUpdateJob;
 use Title;
 
-/**
- * @covers \MediaWiki\Extensions\Translate\Synchronization\MessageUpdateParameter
- */
+/** @covers \MediaWiki\Extension\Translate\Synchronization\MessageUpdateParameter */
 class MessageUpdateParameterTest extends MediaWikiUnitTestCase {
-	/**
-	 * @dataProvider provideSerializable
-	 */
+	/** @dataProvider provideSerializable */
 	public function testSerializable(
 		string $title,
 		string $content,
@@ -32,9 +28,7 @@ class MessageUpdateParameterTest extends MediaWikiUnitTestCase {
 		$this->assertEquals( $messageParam, $serializedMessageParam );
 	}
 
-	/**
-	 * @dataProvider provideSerializable
-	 */
+	/** @dataProvider provideSerializable */
 	public function testCreateFromJob(
 		string $title,
 		string $content,
@@ -52,10 +46,13 @@ class MessageUpdateParameterTest extends MediaWikiUnitTestCase {
 		$this->assertEquals( $content, $messageParams->getContent() );
 		$this->assertEquals( $isRename, $messageParams->isRename() );
 		$this->assertEquals( $isFuzzy, $messageParams->isFuzzy() );
+
 		if ( $isRename ) {
 			$this->assertEquals( $target, $messageParams->getTargetValue() );
 			$this->assertEquals( $replacement, $messageParams->getReplacementValue() );
 			$this->assertEquals( $otherLangs, $messageParams->getOtherLangs() );
+		} else {
+			$this->assertNull( $messageParams->getOtherLangs() );
 		}
 	}
 

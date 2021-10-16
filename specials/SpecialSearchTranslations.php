@@ -15,7 +15,6 @@
 class SpecialSearchTranslations extends SpecialPage {
 	/** @var FormOptions */
 	protected $opts;
-
 	/**
 	 * Placeholders used for highlighting. Search backend can mark the beginning and
 	 * end but we need to run htmlspecialchars on the result first and then
@@ -24,7 +23,6 @@ class SpecialSearchTranslations extends SpecialPage {
 	 * @var array
 	 */
 	protected $hl = [];
-
 	/**
 	 * How many search results to display per page
 	 * @var int
@@ -51,7 +49,7 @@ class SpecialSearchTranslations extends SpecialPage {
 
 		$out = $this->getOutput();
 		$out->addModuleStyles( 'jquery.uls.grid' );
-		$out->addModuleStyles( 'ext.translate.special.searchtranslations.styles' );
+		$out->addModuleStyles( 'ext.translate.specialpages.styles' );
 		$out->addModuleStyles( 'ext.translate.special.translate.styles' );
 		$out->addModuleStyles( [ 'mediawiki.ui.button', 'mediawiki.ui.input', 'mediawiki.ui.checkbox' ] );
 		$out->addModules( 'ext.translate.special.searchtranslations' );
@@ -536,9 +534,7 @@ HTML
 			$container .
 			Html::closeElement( 'li' );
 
-		$output .= Html::closeElement( 'ul' );
-		$output .= Html::closeElement( 'div' );
-		$output .= Html::closeElement( 'div' );
+		$output .= Html::closeElement( 'ul' ) . Html::closeElement( 'div' ) . Html::closeElement( 'div' );
 
 		return $output;
 	}

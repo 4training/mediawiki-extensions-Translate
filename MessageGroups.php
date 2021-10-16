@@ -16,25 +16,14 @@ use MediaWiki\MediaWikiServices;
  * @todo Clean up the mixed static/member method interface.
  */
 class MessageGroups {
-	/**
-	 * @var string[]|null Cache for message group priorities
-	 */
-	protected static $prioritycache;
-
-	/**
-	 * @var MessageGroup[]|null Map of (group ID => MessageGroup)
-	 */
-	protected $groups;
-
-	/**
-	 * @var MessageGroupLoader[]|null
-	 */
-	protected $groupLoaders;
-
-	/**
-	 * @var WANObjectCache|null
-	 */
-	protected $cache;
+	/** @var string[]|null Cache for message group priorities */
+	private static $prioritycache;
+	/** @var MessageGroup[]|null Map of (group ID => MessageGroup) */
+	private $groups;
+	/** @var MessageGroupLoader[]|null */
+	private $groupLoaders;
+	/** @var WANObjectCache|null */
+	private $cache;
 
 	/**
 	 * Tracks the current cache verison. Update this when there are incompatible changes
@@ -42,7 +31,7 @@ class MessageGroups {
 	 * will automatically expire and be cleared off.
 	 * @var int
 	 */
-	private const CACHE_VERSION = 3;
+	private const CACHE_VERSION = 4;
 
 	/**
 	 * Initialises the list of groups
@@ -510,9 +499,7 @@ class MessageGroups {
 		$pathFinder = function ( &$paths, $group, $targetId, $prefix = '' )
 		use ( &$pathFinder ) {
 			if ( $group instanceof AggregateMessageGroup ) {
-				/**
-				 * @var MessageGroup $subgroup
-				 */
+				/** @var MessageGroup $subgroup */
 				foreach ( $group->getGroups() as $subgroup ) {
 					$subId = $subgroup->getId();
 					if ( $subId === $targetId ) {
@@ -536,9 +523,7 @@ class MessageGroups {
 			}
 
 			foreach ( $structure as $rootGroup ) {
-				/**
-				 * @var MessageGroup $rootGroup
-				 */
+				/** @var MessageGroup $rootGroup */
 				if ( $rootGroup->getId() === $group->getId() ) {
 					// Yay we found a top-level group
 					$pathFinder( $paths, $rootGroup, $targetId, $id );
@@ -555,10 +540,7 @@ class MessageGroups {
 		return $paths;
 	}
 
-	/**
-	 * Constructor function.
-	 * @return self
-	 */
+	/** @return self */
 	public static function singleton() {
 		static $instance;
 		if ( !$instance instanceof self ) {
@@ -636,7 +618,7 @@ class MessageGroups {
 		// Slow path for the ones with wildcards
 		$matcher = new StringMatcher( '', $ids );
 		foreach ( self::getAllGroups() as $id => $_ ) {
-			if ( $matcher->match( $id ) ) {
+			if ( $matcher->matches( $id ) ) {
 				$all[] = $id;
 			}
 		}
@@ -689,9 +671,7 @@ class MessageGroups {
 
 		// Determine the top level groups of the tree
 		$tree = $groups;
-		/**
-		 * @var MessageGroup $o
-		 */
+		/** @var MessageGroup $o */
 		foreach ( $groups as $id => $o ) {
 			if ( !$o->exists() ) {
 				unset( $groups[$id], $tree[$id] );
@@ -699,9 +679,7 @@ class MessageGroups {
 			}
 
 			if ( $o instanceof AggregateMessageGroup ) {
-				/**
-				 * @var AggregateMessageGroup $o
-				 */
+				/** @var AggregateMessageGroup $o */
 				foreach ( $o->getGroups() as $sid => $so ) {
 					unset( $tree[$sid] );
 				}

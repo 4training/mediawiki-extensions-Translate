@@ -7,25 +7,23 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\MediaWikiInsertablesSuggester;
+
 /**
  * Class which handles special definition format for %MediaWiki extensions and skins.
  */
 class PremadeMediawikiExtensionGroups {
 	/** @var bool */
 	protected $useConfigure = true;
-
 	/** @var string */
 	protected $idPrefix = 'ext-';
-
 	/** @var int */
 	protected $namespace = NS_MEDIAWIKI;
-
 	/**
 	 * @var string
 	 * @see __construct
 	 */
 	protected $path;
-
 	/**
 	 * @var string
 	 * @see __construct
@@ -157,7 +155,9 @@ class PremadeMediawikiExtensionGroups {
 			[ 'id' => 'MediaWikiPlural' ],
 		];
 
-		$conf['INSERTABLES']['class'] = MediaWikiInsertablesSuggester::class;
+		$conf['INSERTABLES'] = [
+			[ 'class' => MediaWikiInsertablesSuggester::class ]
+		];
 
 		if ( isset( $info['optional'] ) ) {
 			$conf['TAGS']['optional'] = $info['optional'];

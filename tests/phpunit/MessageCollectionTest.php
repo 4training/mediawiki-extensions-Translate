@@ -11,7 +11,7 @@
  * @covers MessageCollection
  */
 class MessageCollectionTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [
@@ -84,9 +84,7 @@ class MessageCollectionTest extends MediaWikiIntegrationTestCase {
 		$this->assertNull( $untranslated->getProperty( 'revision' ) );
 	}
 
-	/**
-	 * @covers MessageCollection::filterChanged
-	 */
+	/** @covers MessageCollection::filterChanged */
 	public function testFilterChanged() {
 		$this->assertTrue(
 			$this->editPage( 'MediaWiki:Changedtranslated_1/fi', 'pupuliini_1' )->isGood()

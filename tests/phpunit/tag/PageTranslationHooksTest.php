@@ -15,7 +15,7 @@ use MediaWiki\Revision\RevisionRecord;
  * @group medium
  */
 class PageTranslationHooksTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [
@@ -95,15 +95,14 @@ class PageTranslationHooksTest extends MediaWikiIntegrationTestCase {
 		// Check that our code works for translation pages
 		$parserOutput = $parser->parse( 'fi-pupu', $translationPageTitle, $options );
 		$actual = $parserOutput->getExtensionData( 'translate-translation-page' );
-		$expected = [
-			'sourcepagetitle' => $translatablePageTitle,
-			'languagecode' => 'fi',
-			'messagegroupid' => 'page-Vuosaari',
-		];
-		$this->assertTrue( is_array( $actual ), 'Extension data is set on marked page' );
+		$this->assertIsArray( $actual, 'Extension data is set on marked page' );
+		$actualTitle = Title::makeTitle(
+			$actual[ 'sourcepagetitle' ][ 'namespace' ],
+			$actual[ 'sourcepagetitle' ][ 'dbkey' ]
+		);
 		$this->assertSame(
 			'Vuosaari',
-			$actual[ 'sourcepagetitle' ]->getPrefixedText(),
+			$actualTitle->getPrefixedText(),
 			'Source page title is correct'
 		);
 		$this->assertSame(
@@ -145,9 +144,7 @@ class PageTranslationHooksTest extends MediaWikiIntegrationTestCase {
 			"translation with errors is saved if user with 'translate-manage' permission is translating." );
 	}
 
-	/**
-	 * @covers PageTranslationHooks::updateTranstagOnNullRevisions
-	 */
+	/** @covers PageTranslationHooks::updateTranstagOnNullRevisions */
 	public function testTagNullRevision() {
 		$title = Title::newFromText( 'translated' );
 		$status = $this->editPage(

@@ -8,9 +8,11 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\Jobs\GenericTranslateJob;
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
-use MediaWiki\Extensions\Translate\Utilities\TranslateReplaceTitle;
+use MediaWiki\Extension\Translate\Jobs\GenericTranslateJob;
+use MediaWiki\Extension\Translate\Services;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\Utilities\TranslateReplaceTitle;
+use MediaWiki\MediaWikiServices;
 
 /**
  * Job for updating translation pages when translation or message definition changes.
@@ -22,10 +24,12 @@ class MessageUpdateJob extends GenericTranslateJob {
 	 * Create a normal message update job without a rename process
 	 * @param Title $target
 	 * @param string $content
-	 * @param bool $fuzzy
-	 * @return MessageUpdateJob
+	 * @param string|false $fuzzy
+	 * @return self
 	 */
-	public static function newJob( Title $target, $content, $fuzzy = false ) {
+	public static function newJob(
+		Title $target, string $content, $fuzzy = false
+	): self {
 		$params = [
 			'content' => $content,
 			'fuzzy' => $fuzzy,
@@ -38,17 +42,22 @@ class MessageUpdateJob extends GenericTranslateJob {
 
 	/**
 	 * Create a message update job containing a rename process
-	 * @param Title $target Target message being modified
-	 * @param string $targetStr Target string
-	 * @param string $replacement Replacement string
-	 * @param bool $fuzzy Whether to fuzzy the message
-	 * @param string $content Content of the source language
-	 * @param array $otherLangContents Content to be updated for other languages
-	 * @return MessageUpdateJob
+	 * @param Title $target
+	 * @param string $targetStr
+	 * @param string $replacement
+	 * @param string|false $fuzzy
+	 * @param string $content
+	 * @param array $otherLangContents
+	 * @return self
 	 */
 	public static function newRenameJob(
-		Title $target, $targetStr, $replacement, $fuzzy, $content, $otherLangContents = []
-	) {
+		Title $target,
+		string $targetStr,
+		string $replacement,
+		$fuzzy,
+		string $content,
+		array $otherLangContents = []
+	): self {
 		$params = [
 			'target' => $targetStr,
 			'replacement' => $replacement,
@@ -78,6 +87,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 		$isRename = $params['rename'] ?? false;
 		$isFuzzy = $params['fuzzy'] ?? false;
 		$otherLangs = $params['otherLangs'] ?? [];
+		$originalTitle = Title::newFromLinkTarget( $this->title->getTitleValue(), Title::NEW_CLONE );
 
 		if ( $isRename ) {
 			$this->title = $this->handleRename( $params['target'], $params['replacement'], $user );
@@ -90,6 +100,8 @@ class MessageUpdateJob extends GenericTranslateJob {
 						'target' => $params['target']
 					]
 				);
+
+				$this->removeFromCache( $originalTitle );
 				return true;
 			}
 		}
@@ -121,6 +133,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 			$this->handleFuzzy( $title );
 		}
 
+		$this->removeFromCache( $originalTitle );
 		return true;
 	}
 
@@ -152,16 +165,10 @@ class MessageUpdateJob extends GenericTranslateJob {
 		$renameSummary = wfMessage( 'translate-manage-import-rename-summary' )
 			->inContentLanguage()->plain();
 
-		/**
-		 * @var Title[] $movableTitles
-		 */
-		foreach ( $movableTitles as $mTitle ) {
-			/**
-			 * @var Title $sourceTitle
-			 * @var Title $replacementTitle
-			 */
-			[ $sourceTitle, $replacementTitle ] = $mTitle;
-			$mv = new MovePage( $sourceTitle, $replacementTitle );
+		foreach ( $movableTitles as [ $sourceTitle, $replacementTitle ] ) {
+			$mv = MediaWikiServices::getInstance()
+				->getMovePageFactory()
+				->newMovePage( $sourceTitle, $replacementTitle );
 
 			$status = $mv->move( $user, $renameSummary, false );
 			if ( !$status->isOK() ) {
@@ -276,6 +283,50 @@ class MessageUpdateJob extends GenericTranslateJob {
 					]
 				);
 			}
+		}
+	}
+
+	private function removeFromCache( Title $title ): void {
+		$config = MediaWikiServices::getInstance()->getMainConfig();
+
+		if ( !$config->get( 'TranslateGroupSynchronizationCache' ) ) {
+			return;
+		}
+
+		$currentTitle = $title;
+		// Check if the current title, is equal to the title passed. This condition will be
+		// true incase of rename where the old title would have been renamed.
+		if ( $this->title && $this->title->getPrefixedDBkey() !== $title->getPrefixedDBkey() ) {
+			$currentTitle = $this->title;
+		}
+
+		$sourceMessageHandle = new MessageHandle( $currentTitle );
+		$groupIds = $sourceMessageHandle->getGroupIds();
+		if ( !$groupIds ) {
+			$this->logWarning(
+				'Could not find group Id for message title',
+				$this->getParams()
+			);
+			return;
+		}
+
+		$groupId = $groupIds[0];
+		$group = MessageGroups::getGroup( $groupId );
+
+		if ( !$group instanceof FileBasedMessageGroup ) {
+			return;
+		}
+
+		$groupSyncCache = Services::getInstance()->getGroupSynchronizationCache();
+		$messageKey = $title->getPrefixedDBkey();
+
+		if ( $groupSyncCache->isMessageBeingProcessed( $groupId, $messageKey ) ) {
+			$groupSyncCache->removeMessages( $groupId, $messageKey );
+		} else {
+			$this->logWarning(
+				"Did not find key: $messageKey; in group: $groupId in group sync cache",
+				$this->getParams()
+			);
 		}
 	}
 }

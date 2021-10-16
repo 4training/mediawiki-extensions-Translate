@@ -201,7 +201,12 @@ class SpecialImportTranslations extends SpecialPage {
 
 		$ffs = new GettextFFS( $group );
 
-		$parseOutput = $ffs->readFromVariable( $data );
+		try {
+			$parseOutput = $ffs->readFromVariable( $data );
+		} catch ( GettextParseException $e ) {
+			return [ 'no-headers' ];
+		}
+
 		// Special data added by GettextFFS
 		$metadata = $parseOutput['EXTRA']['METADATA'];
 
@@ -213,20 +218,27 @@ class SpecialImportTranslations extends SpecialPage {
 		return [ 'ok', $parseOutput ];
 	}
 
+	private function getCache() {
+		return ObjectCache::getInstance( CACHE_DB );
+	}
+
 	protected function setCachedData( $data ) {
-		$key = wfMemcKey( 'translate', 'webimport', $this->getUser()->getId() );
-		wfGetCache( CACHE_DB )->set( $key, $data, 60 * 30 );
+		$cache = self::getCache();
+		$key = $cache->makeKey( 'translate', 'webimport', $this->getUser()->getId() );
+		$cache->set( $key, $data, 60 * 30 );
 	}
 
 	protected function getCachedData() {
-		$key = wfMemcKey( 'translate', 'webimport', $this->getUser()->getId() );
+		$cache = self::getCache();
+		$key = $cache->makeKey( 'translate', 'webimport', $this->getUser()->getId() );
 
-		return wfGetCache( CACHE_DB )->get( $key );
+		return $cache->get( $key );
 	}
 
 	protected function deleteCachedData() {
-		$key = wfMemcKey( 'translate', 'webimport', $this->getUser()->getId() );
+		$cache = self::getCache();
+		$key = $cache->makeKey( 'translate', 'webimport', $this->getUser()->getId() );
 
-		return wfGetCache( CACHE_DB )->delete( $key );
+		return $cache->delete( $key );
 	}
 }

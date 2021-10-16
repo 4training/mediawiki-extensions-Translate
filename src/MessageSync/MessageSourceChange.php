@@ -6,7 +6,7 @@
  * @file
  */
 
-namespace MediaWiki\Extensions\Translate\MessageSync;
+namespace MediaWiki\Extension\Translate\MessageSync;
 
 use InvalidArgumentException;
 
@@ -19,12 +19,10 @@ use InvalidArgumentException;
 class MessageSourceChange {
 	/**
 	 * @var array[][][]
-	 * @codingStandardsIgnoreStart
+	 * @phpcs:ignore Generic.Files.LineLength
 	 * @phan-var array<string,array<string,array<string|int,array{key:string,content:string,similarity?:float,matched_to?:string,previous_state?:string}>>>
-	 * @codingStandardsIgnoreEnd
 	 */
 	protected $changes = [];
-
 	public const ADDITION = 'addition';
 	public const CHANGE = 'change';
 	public const DELETION = 'deletion';
@@ -38,16 +36,13 @@ class MessageSourceChange {
 	 * @var callable[]
 	 */
 	protected $addFunctionMap;
-
 	/**
 	 * Contains a mapping of message type, and the corresponding removal function
 	 * @var callable[]
 	 */
 	protected $removeFunctionMap;
 
-	/**
-	 * @param array[][][] $changes
-	 */
+	/** @param array[][][] $changes */
 	public function __construct( $changes = [] ) {
 		$this->changes = $changes;
 		$this->addFunctionMap = [
@@ -379,10 +374,7 @@ class MessageSourceChange {
 			$this->changes[$language][$type] = array_filter(
 				$this->changes[$language][$type],
 				function ( $change ) use ( $keysToRemove ) {
-					if ( in_array( $change['key'], $keysToRemove, true ) ) {
-						return false;
-					}
-					return true;
+					return !in_array( $change['key'], $keysToRemove, true );
 				}
 			);
 		}
@@ -559,3 +551,5 @@ class MessageSourceChange {
 		return $similarity === 1;
 	}
 }
+
+class_alias( MessageSourceChange::class, '\MediaWiki\Extensions\Translate\MessageSourceChange' );

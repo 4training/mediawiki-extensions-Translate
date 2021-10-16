@@ -2,6 +2,7 @@
 	"@metadata": {
 		"authors": [
 			"AnakngAraw",
+			"GinawaSaHapon",
 			"Jewel457",
 			"Sky Harbor"
 		]
@@ -27,7 +28,6 @@
 	"tpt-mark-summary": "Tinatakan ang bersyong ito para isalinwika",
 	"tpt-edit-failed": "Hindi maisapanahon ang pahina:  $1",
 	"tpt-duplicate": "Ang pangalan ng yunit ng salinwika na $1 ay ginagamit nang mas marami kaysa sa isa.",
-	"tpt-already-marked": "Ang huling bersyon ng pahinang ito ay natatakan na para sa pagsasalinwika.",
 	"tpt-unmarked": "Ang pahinang $1 ay hindi na tinatakan para sa pagsasalinwika.",
 	"tpt-list-nopages": "Walang mga pahinang tinatakan para sa pagsasalinwika o nakahanda upang markahan para sa pagsasalinwika.",
 	"tpt-new-pages-title": "Mga pahinang ipinanukala para sa pagsasalinwika",
@@ -57,13 +57,11 @@
 	"tpt-languages-legend": "Iba pang mga wika:",
 	"tpt-languages-separator": "&#160;•&#32;",
 	"tpt-languages-zero": "Simulan ang pagsasalinwika para sa wikang ito",
-	"tpt-languages-nonzero": "$1 ($2% naisalin)",
+	"tpt-languages-nonzero": "$1 ($2% nasalin)",
 	"tpt-target-page": "Hindi maaaring kinakamay na maisapanahon ang pahinang ito.\nAng pahinang ito ay isang salinwika ng pahinang [[$1]] at maisasapanahon ang salinwika sa pamamagitan ng [$2 kasangkapang pansalinwika].",
 	"tpt-unknown-page": "Nakalaan ang puwang na pampangalang ito para sa mga salinwika ng pahina ng nilalaman.\nTila hindi tumutugma ang pahinang sinusubukan mong baguhin sa anumang pahinang natatakan para sa pagsasalinwika.",
 	"tpt-translation-restricted": "Ang pagsasalinwika ng pahinang ito na papunta sa wikang ito ay pinigilan ng isang tagapangasiwa ng salinwika.\n\nDahilan: $1",
 	"tpt-discouraged-language-force": "<strong>Ang pahinang ito ay hindi maisasalinwika upang maging $2.</strong>\n\nIsang tagapangasiwa ng pagsasalinwika ang nagpasya na ang pahinang ito ay maisasalinwika lamang papunta sa $3.",
-	"tpt-discouraged-language": "<strong>Ang pagsasalinwika papunta sa $2 ay hindi isang nararapat na unahin para sa pahinang ito.</strong>\n\nIsang tagapangasiwa ng salinwika ang nagpasyang ituon ang mga pagsisikap ng pagsasalinwika sa $3.",
-	"tpt-discouraged-language-reason": "Dahilan: $1",
 	"tpt-priority-languages": "Isang tagapangasiwa ng salinwika ang nagtakda ng mga wikang nararapat na unahin para sa pangkat na ito upang maging $1.",
 	"tpt-render-summary": "Isinasapanahon upang tumugma sa bagong bersyon ng pinagmulang pahina",
 	"aggregategroups": "Mga pangkat na pinagsama-sama",

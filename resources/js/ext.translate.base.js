@@ -86,16 +86,16 @@
 		 * @return {Object} Message group object
 		 */
 		findGroup: function ( id, groups ) {
-			var result = null;
+			var result;
 
 			if ( !id ) {
 				return groups;
 			}
 
-			groups.forEach( function ( group ) {
+			groups.some( function ( group ) {
 				if ( group.id === id ) {
 					result = group;
-					return false;
+					return true;
 				}
 
 				if ( group.groups ) {
@@ -103,9 +103,11 @@
 
 					if ( group ) {
 						result = group;
-						return false;
+						return true;
 					}
 				}
+
+				return false;
 			} );
 
 			return result;
@@ -169,10 +171,9 @@
 		},
 
 		isDirty: function () {
-			return $( '.mw-ajax-dialog:visible' ).length || // For old Translate
-				// For new Translate, something being typed in the current editor.
-				mw.translate.dirty ||
-				// For new translate, previous editors has some unsaved edits
+			// Something being typed in the current editor.
+			return mw.translate.dirty ||
+				// Previous editors has some unsaved edits
 				$( '.tux-status-unsaved' ).length;
 		}
 	} );

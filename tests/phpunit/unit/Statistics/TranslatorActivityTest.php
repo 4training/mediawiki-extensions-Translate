@@ -1,30 +1,29 @@
 <?php
-/**
- * @file
- * @author Niklas Laxström
- * @license GPL-2.0-or-later
- */
+declare( strict_types = 1 );
 
-namespace MediaWiki\Extensions\Translate\Statistics;
+namespace MediaWiki\Extension\Translate\Statistics;
 
 use EmptyBagOStuff;
 use HashBagOStuff;
 use InvalidArgumentException;
 use JobQueueGroup;
+use MediaWiki\Languages\LanguageNameUtils;
 use MediaWikiUnitTestCase;
 use Wikimedia\Timestamp\ConvertibleTimestamp;
 
 /**
- * @covers \MediaWiki\Extensions\Translate\Statistics\TranslatorActivity
+ * @author Niklas Laxström
+ * @license GPL-2.0-or-later
+ * @covers \MediaWiki\Extension\Translate\Statistics\TranslatorActivity
  */
 class TranslatorActivityTest extends MediaWikiUnitTestCase {
 	public function testInvalidLanguage() {
 		$cache = $this->createMock( EmptyBagOStuff::class );
 		$query = $this->createMock( TranslatorActivityQuery::class );
 		$jobQueue = $this->createMock( JobQueueGroup::class );
-		$languageValidator = function ( string $language ): bool {
-			return false;
-		};
+		$languageValidator = $this->createMock( LanguageNameUtils::class );
+		$languageValidator->method( 'isKnownLanguageTag' )->willReturn( false );
+
 		$service = new TranslatorActivity( $cache, $query, $jobQueue, $languageValidator );
 
 		$this->expectException( InvalidArgumentException::class );
@@ -51,9 +50,9 @@ class TranslatorActivityTest extends MediaWikiUnitTestCase {
 			->with( $this->equalTo( $language ) );
 		$jobQueue = $this->createMock( JobQueueGroup::class );
 		$jobQueue->expects( $this->never() )->method( 'push' );
-		$languageValidator = function ( string $language ): bool {
-			return true;
-		};
+		$languageValidator = $this->createMock( LanguageNameUtils::class );
+		$languageValidator->method( 'isKnownLanguageTag' )->willReturn( true );
+
 		$service = new TranslatorActivity( $cache, $query, $jobQueue, $languageValidator );
 
 		ConvertibleTimestamp::setFakeTime( $fakeTime1 );
@@ -80,9 +79,9 @@ class TranslatorActivityTest extends MediaWikiUnitTestCase {
 			->with( $this->equalTo( $language ) );
 		$jobQueue = $this->createMock( JobQueueGroup::class );
 		$jobQueue->expects( $this->once() )->method( 'push' );
-		$languageValidator = function ( string $language ): bool {
-			return true;
-		};
+		$languageValidator = $this->createMock( LanguageNameUtils::class );
+		$languageValidator->method( 'isKnownLanguageTag' )->willReturn( true );
+
 		$service = new TranslatorActivity( $cache, $query, $jobQueue, $languageValidator );
 
 		ConvertibleTimestamp::setFakeTime( $fakeTime1 );
@@ -114,9 +113,9 @@ class TranslatorActivityTest extends MediaWikiUnitTestCase {
 			->with( $this->equalTo( $language ) );
 		$jobQueue = $this->createMock( JobQueueGroup::class );
 		$jobQueue->expects( $this->never() )->method( 'push' );
-		$languageValidator = function ( string $language ): bool {
-			return true;
-		};
+		$languageValidator = $this->createMock( LanguageNameUtils::class );
+		$languageValidator->method( 'isKnownLanguageTag' )->willReturn( true );
+
 		$service = new TranslatorActivity( $cache, $query, $jobQueue, $languageValidator );
 
 		ConvertibleTimestamp::setFakeTime( $fakeTime1 );
@@ -132,11 +131,13 @@ class TranslatorActivityTest extends MediaWikiUnitTestCase {
 
 	private function getExampleData(): array {
 		$translators = [
-			'Hunter' => [
+			[
+				TranslatorActivityQuery::USER_NAME => 'Hunter',
 				TranslatorActivityQuery::USER_TRANSLATIONS => 1234,
 				TranslatorActivityQuery::USER_LAST_ACTIVITY => 10,
 			],
-			'Farmer' => [
+			[
+				TranslatorActivityQuery::USER_NAME => 'Farmer',
 				TranslatorActivityQuery::USER_TRANSLATIONS => 2,
 				TranslatorActivityQuery::USER_LAST_ACTIVITY => 20,
 			],

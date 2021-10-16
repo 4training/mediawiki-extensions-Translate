@@ -7,10 +7,13 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\PageTranslation\ParsingFailure;
+use MediaWiki\Extension\Translate\Services;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\Linker\LinkTarget;
 use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\MutableRevisionRecord;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\User\UserIdentity;
 use Wikimedia\ScopedCallback;
@@ -23,44 +26,46 @@ use Wikimedia\ScopedCallback;
 class PageTranslationHooks {
 	// Uuugly hacks
 	public static $allowTargetEdit = false;
-
 	// Check if job queue is running
 	public static $jobQueueRunning = false;
-
 	// Check if we are just rendering tags or such
 	public static $renderingContext = false;
-
 	// Used to communicate data between LanguageLinks and SkinTemplateGetLanguageLink hooks.
 	private static $languageLinkData = [];
 
 	/**
 	 * Hook: ParserBeforeInternalParse
-	 * @param Parser $parser
+	 *
+	 * @param Parser $wikitextParser
 	 * @param string &$text
 	 * @param-taint $text escapes_htmlnoent
 	 * @param string $state
 	 * @return bool
 	 */
-	public static function renderTagPage( $parser, &$text, $state ) {
-		$title = $parser->getTitle();
+	public static function renderTagPage( $wikitextParser, &$text, $state ) {
+		$translatablePageParser = Services::getInstance()->getTranslatablePageParser();
 
-		if ( preg_match( '~</?translate[ >]~', $text ) !== 0 ) {
+		if ( $translatablePageParser->containsMarkup( $text ) ) {
 			try {
-				$parse = TranslatablePage::newFromText( $parser->getTitle(), $text )->getParse();
-				$text = $parse->getTranslationPageText( null );
-				$parser->getOutput()->addModuleStyles( 'ext.translate' );
-			} catch ( TPException $e ) {
-				wfDebug( 'TPException caught; expected' );
+				$parserOutput = $translatablePageParser->parse( $text );
+				// If parsing succeeds, replace text and add styles
+				$text = $parserOutput->sourcePageTextForRendering(
+					$wikitextParser->getTargetLanguage()
+				);
+				$wikitextParser->getOutput()->addModuleStyles( 'ext.translate' );
+			} catch ( ParsingFailure $e ) {
+				wfDebug( 'ParsingFailure caught; expected' );
 			}
 		}
 
 		// For section previews, perform additional clean-up, given tags are often
 		// unbalanced when we preview one section only.
-		if ( $parser->getOptions()->getIsSectionPreview() ) {
-			$text = TranslatablePage::cleanupTags( $text );
+		if ( $wikitextParser->getOptions()->getIsSectionPreview() ) {
+			$text = $translatablePageParser->cleanupTags( $text );
 		}
 
 		// Set display title
+		$title = $wikitextParser->getTitle();
 		$page = TranslatablePage::isTranslationPage( $title );
 		if ( !$page ) {
 			return true;
@@ -70,23 +75,40 @@ class PageTranslationHooks {
 		[ , $code ] = TranslateUtils::figureMessage( $title->getText() );
 		$name = $page->getPageDisplayTitle( $code );
 		if ( $name ) {
-			$name = $parser->recursivePreprocess( $name );
-			$name = $parser->getTargetLanguage()->convert( $name );
-			$parser->getOutput()->setDisplayTitle( $name );
+			$name = $wikitextParser->recursivePreprocess( $name );
+			if ( method_exists( MediaWikiServices::class, 'getLanguageConverterFactory' ) ) {
+				// MW >= 1.35
+				$langConv = MediaWikiServices::getInstance()->getLanguageConverterFactory()
+					->getLanguageConverter( $wikitextParser->getTargetLanguage() );
+				$name = $langConv->convert( $name );
+			} else {
+				$name = $wikitextParser->getTargetLanguage()->convert( $name );
+			}
+			$wikitextParser->getOutput()->setDisplayTitle( $name );
 		}
 		self::$renderingContext = false;
 
-		$parser->getOutput()->setExtensionData(
-			'translate-translation-page',
-			[
-				'sourcepagetitle' => $page->getTitle(),
-				'languagecode' => $code,
-				'messagegroupid' => $page->getMessageGroupId()
-			]
+		$extensionData = [
+			'languagecode' => $code,
+			'messagegroupid' => $page->getMessageGroupId()
+		];
+		// Backwards-compatibility. If SemanticMediaWiki is installed, write the whole
+		// Title object since prior to https://github.com/SemanticMediaWiki/SemanticMediaWiki/pull/4869
+		// SMW could only understand it. To be removed after SMW release.
+		if ( ExtensionRegistry::getInstance()->isLoaded( 'SemanticMediaWiki' ) ) {
+			$extensionData['sourcepagetitle'] = $page->getTitle();
+		} else {
+			$extensionData['sourcepagetitle'] = [
+				'namespace' => $page->getTitle()->getNamespace(),
+				'dbkey' => $page->getTitle()->getDBkey()
+			];
+		}
+		$wikitextParser->getOutput()->setExtensionData(
+			'translate-translation-page', $extensionData
 		);
 
 		// Disable edit section links
-		$parser->getOutput()->setExtensionData( 'Translate-noeditsection', true );
+		$wikitextParser->getOutput()->setExtensionData( 'Translate-noeditsection', true );
 
 		return true;
 	}
@@ -102,6 +124,81 @@ class PageTranslationHooks {
 	) {
 		if ( $out->getExtensionData( 'Translate-noeditsection' ) ) {
 			$options['enableSectionEditLinks'] = false;
+		}
+	}
+
+	/**
+	 * This sets &$revRecord to the revision of transcluded page translation if it exists,
+	 * or sets it to the source language if the page translation does not exist.
+	 * The page translation is chosen based on language of the source page.
+	 * Used in MW >= 1.36
+	 *
+	 * Hook: BeforeParserFetchTemplateRevisionRecord
+	 * @param LinkTarget|null $contextLink
+	 * @param LinkTarget|null $templateLink
+	 * @param bool &$skip
+	 * @param RevisionRecord|null &$revRecord
+	 */
+	public static function fetchTranslatableTemplateAndTitle(
+		?LinkTarget $contextLink,
+		?LinkTarget $templateLink,
+		bool &$skip,
+		?RevisionRecord &$revRecord
+	): void {
+		if ( !$templateLink ) {
+			return;
+		}
+
+		$templateTitle = Title::castFromLinkTarget( $templateLink );
+
+		$templateTranslationPage = TranslatablePage::isTranslationPage( $templateTitle );
+		if ( $templateTranslationPage ) {
+			// Template is referring to a translation page, fetch it and incase it doesn't
+			// exist, fetch the source fallback
+			$revRecord = $templateTranslationPage->getRevisionRecordWithFallback();
+			return;
+		}
+
+		if ( !TranslatablePage::isSourcePage( $templateTitle ) ) {
+			return;
+		}
+
+		$translatableTemplatePage = TranslatablePage::newFromTitle( $templateTitle );
+
+		if ( !( $translatableTemplatePage->supportsTransclusion() ?? false ) ) {
+			// Page being transcluded does not support language aware transclusion
+			return;
+		}
+
+		$store = MediaWikiServices::getInstance()->getRevisionStore();
+
+		if ( $contextLink ) {
+			// Fetch the context page language, and then check if template is present in that language
+			$templateTranslationTitle = $templateTitle->getSubpage(
+				Title::castFromLinkTarget( $contextLink )->getPageLanguage()->getCode()
+			 );
+
+			if ( $templateTranslationTitle ) {
+				if ( $templateTranslationTitle->exists() ) {
+					// Template is present in the context page language, fetch the revision record and return
+					$revRecord = $store->getRevisionByTitle( $templateTranslationTitle );
+				} else {
+					// In case the template has not been translated to the context page language,
+					// we assign a MutableRevisionRecord in order to add a dependency, so that when
+					// it is created, the newly created page is loaded rather than the fallback
+					$revRecord = new MutableRevisionRecord( $templateTranslationTitle );
+				}
+				return;
+			}
+		}
+
+		// Context page information not available OR the template translation title could not be determined.
+		// Fetch and return the RevisionRecord of the template in the source language
+		$sourceTemplateTitle = $templateTitle->getSubpage(
+			$translatableTemplatePage->getMessageGroup()->getSourceLanguage()
+		);
+		if ( $sourceTemplateTitle && $sourceTemplateTitle->exists() ) {
+			$revRecord = $store->getRevisionByTitle( $sourceTemplateTitle );
 		}
 	}
 
@@ -139,15 +236,9 @@ class PageTranslationHooks {
 				$notices['translate-tag'] = $msg->parseAsBlock();
 			}
 
-			$label = wfMessage( 'tps-edit-sourcepage-title' )->escaped();
-			$msg = Html::rawElement(
-				'div',
-				[],
-				wfMessage( 'tps-edit-sourcepage-text' )->parse()
-			);
-
-			$notices[] = TranslateUtils::fieldset(
-				$label, $msg, [ 'class' => 'mw-infobox translate-edit-documentation' ]
+			$notices[] = Html::warningBox(
+				wfMessage( 'tps-edit-sourcepage-text' )->parse(),
+				'translate-edit-documentation'
 			);
 		}
 	}
@@ -229,8 +320,8 @@ class PageTranslationHooks {
 		return true;
 	}
 
-	public static function updateTranslationPage( TranslatablePage $page,
-		$code, $user, $flags, $summary
+	public static function updateTranslationPage(
+		TranslatablePage $page, $code, $user, $flags, $summary
 	) {
 		$source = $page->getTitle();
 		$target = $source->getSubpage( $code );
@@ -243,11 +334,16 @@ class PageTranslationHooks {
 		$job->setUser( $user );
 		$job->setSummary( $summary );
 		$job->setFlags( $flags );
-		$job->run();
+		JobQueueGroup::singleton()->push( $job );
 
 		// Invalidate caches so that language bar is up-to-date
 		$pages = $page->getTranslationPages();
 		foreach ( $pages as $title ) {
+			if ( $title->equals( $target ) ) {
+				// Handled by the TranslateRenderJob
+				continue;
+			}
+
 			$wikiPage = WikiPage::factory( $title );
 			$wikiPage->doPurge();
 		}
@@ -360,7 +456,7 @@ class PageTranslationHooks {
 					'task' => 'view'
 				];
 
-				$classes[] = 'new';  // For red link color
+				$classes[] = 'new'; // For red link color
 				$attribs = [
 					'title' => wfMessage( 'tpt-languages-zero' )->inLanguage( $userLang )->text(),
 					'class' => $classes,
@@ -627,7 +723,6 @@ class PageTranslationHooks {
 		return true;
 	}
 
-	/** Returns any syntax error */
 	protected static function tpSyntaxError( ?Title $title, Content $content ): ?TPException {
 		if ( !$content instanceof TextContent || !$title ) {
 			return null;
@@ -638,17 +733,14 @@ class PageTranslationHooks {
 		// See T154500
 		$text = str_replace( [ "\r\n", "\r" ], "\n", rtrim( $text ) );
 
-		if ( preg_match( '~</?translate[ >]~', $text ) === 0 ) {
-			return null;
-		}
-
-		$page = TranslatablePage::newFromText( $title, $text );
-
 		$exception = null;
-		try {
-			$page->getParse();
-		} catch ( TPException $e ) {
-			$exception = $e;
+		$parser = Services::getInstance()->getTranslatablePageParser();
+		if ( $parser->containsMarkup( $text ) ) {
+			try {
+				$parser->parse( $text );
+			} catch ( ParsingFailure $e ) {
+				$exception = new TPException( $e->getMessageSpecification() );
+			}
 		}
 
 		return $exception;
@@ -709,18 +801,16 @@ class PageTranslationHooks {
 		if ( $content instanceof TextContent ) {
 			$text = $content->getNativeData();
 		} else {
-			// Screw it, not interested
+			// Not applicable
 			return true;
 		}
 
-		// Quick escape on normal pages
-		if ( preg_match( '~</?translate[ >]~', $text ) === 0 ) {
-			return true;
+		$parser = Services::getInstance()->getTranslatablePageParser();
+		if ( $parser->containsMarkup( $text ) ) {
+			// Add the ready tag
+			$page = TranslatablePage::newFromTitle( $wikiPage->getTitle() );
+			$page->addReadyTag( $revisionRecord->getId() );
 		}
-
-		// Add the ready tag
-		$page = TranslatablePage::newFromTitle( $wikiPage->getTitle() );
-		$page->addReadyTag( $revisionRecord->getId() );
 
 		return true;
 	}
@@ -752,18 +842,16 @@ class PageTranslationHooks {
 		if ( $content instanceof TextContent ) {
 			$text = $content->getNativeData();
 		} else {
-			// Screw it, not interested
+			// Not applicable
 			return true;
 		}
 
-		// Quick escape on normal pages
-		if ( preg_match( '~</?translate[ >]~', $text ) === 0 ) {
-			return true;
+		$parser = Services::getInstance()->getTranslatablePageParser();
+		if ( $parser->containsMarkup( $text ) ) {
+			// Add the ready tag
+			$page = TranslatablePage::newFromTitle( $wikiPage->getTitle() );
+			$page->addReadyTag( $revision->getId() );
 		}
-
-		// Add the ready tag
-		$page = TranslatablePage::newFromTitle( $wikiPage->getTitle() );
-		$page->addReadyTag( $revision->getId() );
 
 		return true;
 	}
@@ -860,7 +948,7 @@ class PageTranslationHooks {
 		return false;
 	}
 
-	private static function checkTranslatablePageSlow( LinkTarget $unit ) : ?TranslatablePage {
+	private static function checkTranslatablePageSlow( LinkTarget $unit ): ?TranslatablePage {
 		$parts = TranslatablePage::parseTranslationUnit( $unit );
 		$translationPageTitle = Title::newFromText(
 			$parts[ 'sourcepage' ] . '/' . $parts[ 'language' ]
@@ -908,9 +996,12 @@ class PageTranslationHooks {
 		$languages = TranslateMetadata::get( $groupId, 'prioritylangs' );
 		$filter = array_flip( explode( ',', $languages ) );
 		if ( !isset( $filter[$handle->getCode()] ) ) {
-			// @todo Default reason if none provided
 			$reason = TranslateMetadata::get( $groupId, 'priorityreason' );
-			return [ 'tpt-translation-restricted', $reason ];
+			if ( $reason ) {
+				return [ 'tpt-translation-restricted', $reason ];
+			}
+
+			return [ 'tpt-translation-restricted-no-reason' ];
 		}
 
 		return [];
@@ -932,6 +1023,7 @@ class PageTranslationHooks {
 
 		$whitelist = [
 			'read', 'delete', 'undelete', 'deletedtext', 'deletedhistory',
+			'deleterevision', 'suppressrevision', 'viewsuppressed', // T286884
 			'review', // FlaggedRevs
 			'patrol', // T151172
 		];
@@ -1170,8 +1262,8 @@ class PageTranslationHooks {
 			return true;
 		}
 
-		$cache = wfGetCache( CACHE_ANYTHING );
-		$key = wfMemcKey( 'pt-lock', sha1( $title->getPrefixedText() ) );
+		$cache = ObjectCache::getInstance( CACHE_ANYTHING );
+		$key = $cache->makeKey( 'pt-lock', sha1( $title->getPrefixedText() ) );
 		if ( $cache->get( $key ) === 'locked' ) {
 			$result = [ 'pt-locked-page' ];
 
@@ -1197,7 +1289,11 @@ class PageTranslationHooks {
 		}
 
 		// Copied from Skin::subPageSubtitle()
-		if ( $out->isArticle() && MWNamespace::hasSubpages( $out->getTitle()->getNamespace() ) ) {
+		$nsInfo = MediaWikiServices::getInstance()->getNamespaceInfo();
+		if (
+			$out->isArticle() &&
+			$nsInfo->hasSubpages( $out->getTitle()->getNamespace() )
+		) {
 			$ptext = $out->getTitle()->getPrefixedText();
 			if ( strpos( $ptext, '/' ) !== false ) {
 				$links = explode( '/', $ptext );
@@ -1380,6 +1476,7 @@ class PageTranslationHooks {
 				continue;
 			}
 
+			/** @var WikiPageMessageGroup */
 			$group = $handle->getGroup();
 			if ( !$group instanceof WikiPageMessageGroup ) {
 				continue;

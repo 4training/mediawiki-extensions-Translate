@@ -16,24 +16,13 @@ use MediaWiki\MediaWikiServices;
  * @since 2011-03-13
  */
 class MessageHandle {
-	/**
-	 * @var LinkTarget
-	 */
+	/** @var LinkTarget */
 	protected $title;
-
-	/**
-	 * @var string|null
-	 */
+	/** @var string|null */
 	protected $key;
-
-	/**
-	 * @var string|null Language code
-	 */
+	/** @var string|null Language code */
 	protected $code;
-
-	/**
-	 * @var string[]|null
-	 */
+	/** @var string[]|null */
 	protected $groupIds;
 
 	public function __construct( LinkTarget $title ) {
@@ -76,7 +65,7 @@ class MessageHandle {
 
 	/**
 	 * Returns the identified or guessed message key.
-	 * @return String
+	 * @return string
 	 */
 	public function getKey() {
 		$this->figureMessage();
@@ -87,7 +76,7 @@ class MessageHandle {
 	/**
 	 * Returns the language code.
 	 * For language codeless source messages will return empty string.
-	 * @return String
+	 * @return string
 	 */
 	public function getCode() {
 		$this->figureMessage();
@@ -272,7 +261,8 @@ class MessageHandle {
 	public function getInternalKey() {
 		$key = $this->getKey();
 
-		if ( !MWNamespace::isCapitalized( $this->title->getNamespace() ) ) {
+		$nsInfo = MediaWikiServices::getInstance()->getNamespaceInfo();
+		if ( !$nsInfo->isCapitalized( $this->title->getNamespace() ) ) {
 			return $key;
 		}
 

@@ -7,7 +7,7 @@
  * @license GPL-2.0-or-later
  */
 
-namespace MediaWiki\Extensions\Translate\Jobs;
+namespace MediaWiki\Extension\Translate\Jobs;
 
 use MediaWiki\Logger\LoggerFactory;
 use Psr\Log\LoggerInterface;
@@ -43,9 +43,15 @@ abstract class GenericTranslateJob extends \Job {
 		return $this->logger;
 	}
 
-	protected function getLogPrefix() {
-		return '[Job: ' . $this->getType() . '][Request ID: ' . $this->getRequestId() .
-			'][Title: ' . $this->title->getPrefixedText() . '] ';
+	protected function getLogPrefix(): string {
+		$prefix = $this->getType();
+		if ( isset( $this->title ) ) {
+			$prefix .= ' [' . $this->title->getPrefixedText() . ']';
+		}
+
+		// Add a separator at the end.
+		$prefix .= ': ';
+		return $prefix;
 	}
 
 	protected function logInfo( $msg, $context = [] ) {
@@ -64,3 +70,5 @@ abstract class GenericTranslateJob extends \Job {
 		$this->getLogger()->warning( $this->getLogPrefix() . $msg, $context );
 	}
 }
+
+class_alias( GenericTranslateJob::class, '\MediaWiki\Extensions\Translate\GenericTranslateJob' );

@@ -4,16 +4,14 @@
  * @license GPL-2.0-or-later
  */
 
-namespace MediaWiki\Extensions\Translate\Utilities\StringComparators;
+namespace MediaWiki\Extension\Translate\Utilities\StringComparators;
 
 /**
  * A simple string comparator, that compares two strings and determines if they are an exact match.
  * @since 2019.10
  */
 class SimpleStringComparator implements StringComparator {
-	/**
-	 * @inheritDoc
-	 */
+	/** @inheritDoc */
 	public function getSimilarity( $addedMessage, $deletedMessage ) {
 		if ( $addedMessage === $deletedMessage ) {
 			return 1;
@@ -27,3 +25,5 @@ class SimpleStringComparator implements StringComparator {
 		return 0;
 	}
 }
+
+class_alias( SimpleStringComparator::class, '\MediaWiki\Extensions\Translate\SimpleStringComparator' );

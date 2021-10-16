@@ -2,12 +2,12 @@
 
 declare( strict_types = 1 );
 
-namespace MediaWiki\Extensions\Translate\Synchronization;
+namespace MediaWiki\Extension\Translate\Synchronization;
 
 use Maintenance;
-use MediaWiki\Extensions\Translate\Services;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Logger\LoggerFactory;
-use MessageIndex;
+use MediaWiki\MediaWikiServices;
 
 /**
  * @author Abijeet Patro
@@ -25,6 +25,12 @@ class CompleteExternalTranslationMaintenanceScript extends Maintenance {
 	}
 
 	public function execute() {
+		$config = MediaWikiServices::getInstance()->getMainConfig();
+
+		if ( !$config->get( 'TranslateGroupSynchronizationCache' ) ) {
+			$this->fatalError( 'GroupSynchronizationCache is not enabled' );
+		}
+
 		$logger = LoggerFactory::getInstance( 'Translate.GroupSynchronization' );
 		$groupSyncCache = Services::getInstance()->getGroupSynchronizationCache();
 		$groupsInSync = $groupSyncCache->getGroupsInSync();
@@ -47,20 +53,24 @@ class CompleteExternalTranslationMaintenanceScript extends Maintenance {
 			}
 
 			if ( $groupResponse->hasTimedOut() ) {
-				$remainingMessageKeys = $groupResponse->getRemainingMessages();
+				$remainingMessages = $groupResponse->getRemainingMessages();
 				$logger->warning(
 					'MessageUpdateJobs timed out for group - {groupId}; ' .
 					'Messages - {messages}; ' .
 					'Jobs remaining - {jobRemaining}',
 					[
 						'groupId' => $groupId ,
-						'jobRemaining' => count( $remainingMessageKeys ),
-						'messages' => implode( ', ', $remainingMessageKeys )
+						'jobRemaining' => count( $remainingMessages ),
+						'messages' => implode( ', ', array_keys( $remainingMessages ) )
 					]
 				);
-				wfLogWarning( 'MessageUpdateJob timed out for group - ' . $groupId );
 
-				$groupSyncCache->endSync( $groupId );
+				$count = count( $remainingMessages );
+				wfLogWarning( "MessageUpdateJob timed out for group $groupId with $count message(s) remaining" );
+				$groupSyncCache->forceEndSync( $groupId );
+
+				$groupSyncCache->addGroupErrors( $groupResponse );
+
 			} else {
 				$groupsInProgress[] = $groupId;
 			}
@@ -68,8 +78,7 @@ class CompleteExternalTranslationMaintenanceScript extends Maintenance {
 
 		if ( !$groupsInProgress ) {
 			// No groups in progress.
-			$logger->info( 'All message groups are now in sync. Starting MessageIndex rebuild' );
-			MessageIndex::singleton()->rebuild();
+			$logger->info( 'All message groups are now in sync.' );
 		}
 
 		$logger->info(
@@ -81,3 +90,8 @@ class CompleteExternalTranslationMaintenanceScript extends Maintenance {
 		);
 	}
 }
+
+class_alias(
+	CompleteExternalTranslationMaintenanceScript::class,
+	'\MediaWiki\Extensions\Translate\CompleteExternalTranslationMaintenanceScript'
+);

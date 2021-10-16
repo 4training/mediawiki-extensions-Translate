@@ -1,13 +1,13 @@
 <?php
+
 /**
  * Tests for yaml wrapper.
  *
  * @author Niklas Laxström
  * @license GPL-2.0-or-later
  */
-
 class TranslateYamlTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [

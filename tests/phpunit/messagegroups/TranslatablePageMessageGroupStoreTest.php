@@ -1,16 +1,13 @@
 <?php
-/**
- * @group Database
- */
+
+/** @group Database */
 class TranslatablePageMessageGroupStoreTest extends MediaWikiIntegrationTestCase {
 	use TranslatablePageTestTrait;
 
-	/**
-	 * @var TranslatablePageMessageGroupStore
-	 */
+	/** @var TranslatablePageMessageGroupStore */
 	protected $mgTranslateStore;
 
-	public function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [

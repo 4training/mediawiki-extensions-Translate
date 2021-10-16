@@ -4,15 +4,11 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\Utilities\GettextPlural;
+use MediaWiki\Extension\Translate\Utilities\GettextPlural;
 
-/**
- * @coversDefaultClass \MediaWiki\Extensions\Translate\Utilities\GettextPlural
- */
+/** @coversDefaultClass \MediaWiki\Extension\Translate\Utilities\GettextPlural */
 class GettextPluralTest extends MediaWikiUnitTestCase {
-	/**
-	 * @covers ::getPluralRule
-	 */
+	/** @covers ::getPluralRule */
 	public function testGetPluralRule() {
 		$expected = 'nplurals=2; plural=(n != 1);';
 		$actual = GettextPlural::getPluralRule( 'en' );

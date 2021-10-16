@@ -1,4 +1,5 @@
 <?php
+
 /**
  * @license GPL-2.0-or-later
  * @ingroup SpecialPage TranslateSpecialPage
@@ -11,13 +12,10 @@ class SpecialExportTranslations extends SpecialPage {
 
 	/** @var string */
 	protected $language;
-
 	/** @var string */
 	protected $format;
-
 	/** @var string */
 	protected $groupId;
-
 	/** @var string[] */
 	public static $validFormats = [ 'export-as-po', 'export-to-file' ];
 
@@ -25,9 +23,7 @@ class SpecialExportTranslations extends SpecialPage {
 		parent::__construct( 'ExportTranslations' );
 	}
 
-	/**
-	 * @param null|string $par
-	 */
+	/** @param null|string $par */
 	public function execute( $par ) {
 		$out = $this->getOutput();
 		$request = $this->getRequest();
@@ -84,8 +80,7 @@ class SpecialExportTranslations extends SpecialPage {
 				'default' => $this->format,
 			],
 		];
-		$form = HTMLForm::factory( 'ooui', $fields, $this->getContext() );
-		$form
+		HTMLForm::factory( 'ooui', $fields, $this->getContext() )
 			->setMethod( 'get' )
 			->setWrapperLegendMsg( 'translate-page-settings-legend' )
 			->setSubmitTextMsg( 'translate-submit' )
@@ -93,9 +88,7 @@ class SpecialExportTranslations extends SpecialPage {
 			->displayForm( false );
 	}
 
-	/**
-	 * @return array
-	 */
+	/** @return array */
 	protected function getGroupOptions() {
 		$selected = $this->groupId;
 		$groups = MessageGroups::getAllGroups();
@@ -115,9 +108,7 @@ class SpecialExportTranslations extends SpecialPage {
 		return $options;
 	}
 
-	/**
-	 * @return array
-	 */
+	/** @return array */
 	protected function getLanguageOptions() {
 		$languages = TranslateUtils::getLanguageNames( 'en' );
 		$options = [];
@@ -128,9 +119,7 @@ class SpecialExportTranslations extends SpecialPage {
 		return $options;
 	}
 
-	/**
-	 * @return array
-	 */
+	/** @return array */
 	protected function getFormatOptions() {
 		$options = [];
 		foreach ( self::$validFormats as $format ) {
@@ -140,9 +129,7 @@ class SpecialExportTranslations extends SpecialPage {
 		return $options;
 	}
 
-	/**
-	 * @return Status
-	 */
+	/** @return Status */
 	protected function checkInput() {
 		$status = Status::newGood();
 
@@ -226,26 +213,30 @@ class SpecialExportTranslations extends SpecialPage {
 
 			default:
 				// @todo Add web viewing for groups other than WikiPageMessageGroup
-				$pageTranslation = $this->getConfig()->get( 'EnablePageTranslation' );
-				if ( $pageTranslation && $group instanceof WikiPageMessageGroup ) {
-					$collection->loadTranslations();
-					$page = TranslatablePage::newFromTitle( $group->getTitle() );
-					$text = $page->getParse()->getTranslationPageText( $collection );
-					$displayTitle = $page->getPageDisplayTitle( $this->language );
-					if ( $displayTitle ) {
-						$text = "{{DISPLAYTITLE:$displayTitle}}$text";
-					}
-					$box = Html::element(
-						'textarea',
-						[ 'id' => 'wpTextbox', 'rows' => 40, ],
-						$text
-					);
-					$out->addHTML( $box );
-					return;
+				if ( !$group instanceof WikiPageMessageGroup ) {
+					// This should have been prevented at validation. See checkInput().
+					throw new LogicException( 'Unexpected export format.' );
 				}
 
-				// This should have been prevented at validation. See checkInput().
-				throw new Exception( 'Unexpected export format.' );
+				$translatablePage = TranslatablePage::newFromTitle( $group->getTitle() );
+				$translationPage = $translatablePage->getTranslationPage( $collection->getLanguage() );
+
+				$translationPage->filterMessageCollection( $collection );
+				$messages = $translationPage->extractMessages( $collection );
+				$text = $translationPage->generateSourceFromTranslations( $messages );
+
+				$displayTitle = $translatablePage->getPageDisplayTitle( $this->language );
+				if ( $displayTitle ) {
+					$text = "{{DISPLAYTITLE:$displayTitle}}$text";
+				}
+
+				$box = Html::element(
+					'textarea',
+					[ 'id' => 'wpTextbox', 'rows' => 40, ],
+					$text
+				);
+				$out->addHTML( $box );
+
 		}
 	}
 

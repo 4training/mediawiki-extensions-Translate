@@ -3,7 +3,8 @@
 		"authors": [
 			"ArmenBakkalian",
 			"Azniv Stepanian",
-			"Kareyac"
+			"Kareyac",
+			"Շահէն"
 		]
 	},
 	"translate": "Թարգմանութիւն",
@@ -17,7 +18,6 @@
 	"translate-next": "Յաջորդ էջը",
 	"translate-prev": "Նախորդ էջը",
 	"translate-page-edit": "Խմբագրել",
-	"translate-edit-translation": "Թարգմանութիւն",
 	"translate-export-form-format": "Ձեւաւորել",
 	"translate-rcfilters-translations": "Թարգմանութիւններ",
 	"translate-stats-edits": "Խմբագրումներ",
@@ -28,5 +28,7 @@
 	"translate-statsf-scale-hours": "Ժամեր",
 	"translate-statsf-submit": "Կանխաստուգել",
 	"translate-smg-rename-cancel": "Չեղարկել",
-	"translate-documentation-language": "Հաղորդագրութեան փաստագրութիւն"
+	"translate-smg-strong-sync-help": "Օգնութիւն",
+	"translate-documentation-language": "Հաղորդագրութեան փաստագրութիւն",
+	"tux-editor-translate-mode": "Ցանկ"
 }

@@ -25,17 +25,18 @@ class SpecialPageMigration extends SpecialPage {
 		$output = $this->getOutput();
 		$this->setHeaders();
 		$this->checkPermissions();
+		$this->addHelpLink( 'Help:Extension:Translate/Page translation administration' );
 		$this->outputHeader( 'pagemigration-summary' );
 		$output->addModules( 'ext.translate.special.pagemigration' );
 		$output->addModuleStyles( [
-			'ext.translate.special.pagemigration.styles',
+			'ext.translate.specialpages.styles',
 			'jquery.uls.grid'
 		] );
 
 		# Do stuff
 		# ...
 		$out = '';
-		$out .= Html::openElement( 'div', [ 'class' => 'grid' ] );
+		$out .= Html::openElement( 'div', [ 'class' => 'mw-tpm-sp-container grid' ] );
 		$out .= Html::openElement( 'div', [ 'class' => 'mw-tpm-sp-error row',
 			'id' => 'mw-tpm-sp-error-div' ] );
 		$out .= Html::element( 'div',
@@ -64,8 +65,7 @@ class SpecialPageMigration extends SpecialPage {
 			'value' => $this->msg( 'pm-cancel-button-label' )->text() ] );
 		$out .= Html::closeElement( 'form' );
 		$out .= Html::element( 'div', [ 'class' => 'mw-tpm-sp-instructions hide' ] );
-		$out .= Html::openElement( 'div', [ 'class' => 'mw-tpm-sp-unit-listing' ] );
-		$out .= Html::closeElement( 'div' );
+		$out .= Html::rawElement( 'div', [ 'class' => 'mw-tpm-sp-unit-listing' ] );
 		$out .= Html::closeElement( 'div' );
 
 		$output->addHTML( $out );

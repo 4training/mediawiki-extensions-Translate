@@ -7,11 +7,9 @@
  * @license GPL-2.0-or-later
  */
 
-namespace MediaWiki\Extensions\Translate\SystemUsers;
+namespace MediaWiki\Extension\Translate\SystemUsers;
 
-/**
- * @since 2019.08
- */
+/** @since 2019.08 */
 class TranslateUserManager {
 	public static function getUser() {
 		return \User::newSystemUser( self::getName(), [ 'steal' => true ] );
@@ -23,3 +21,5 @@ class TranslateUserManager {
 		return $wgTranslateUserManagerName;
 	}
 }
+
+class_alias( TranslateUserManager::class, '\MediaWiki\Extensions\Translate\TranslateUserManager' );

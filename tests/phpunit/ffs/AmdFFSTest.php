@@ -8,12 +8,10 @@
  * @license GPL-2.0-or-later
  */
 
-/**
- * @see AmdFFS
- */
+/** @covers \AmdFFS */
 class AmdFFSTest extends MediaWikiIntegrationTestCase {
 
-	public function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 		$this->groupConfiguration = [
 			'BASIC' => [
@@ -33,13 +31,9 @@ class AmdFFSTest extends MediaWikiIntegrationTestCase {
 
 	protected $groupConfiguration;
 
-	/**
-	 * @dataProvider amdProvider
-	 */
+	/** @dataProvider amdProvider */
 	public function testParsing( $messages, $authors, $file ) {
-		/**
-		 * @var FileBasedMessageGroup $group
-		 */
+		/** @var FileBasedMessageGroup $group */
 		$group = MessageGroupBase::factory( $this->groupConfiguration );
 		$ffs = new AmdFFS( $group );
 		$parsed = $ffs->readFromVariable( $file );
@@ -98,9 +92,7 @@ JS;
 
 	public function testExport() {
 		$collection = new MockMessageCollectionForExport();
-		/**
-		 * @var FileBasedMessageGroup $group
-		 */
+		/** @var FileBasedMessageGroup $group */
 		$group = MessageGroupBase::factory( $this->groupConfiguration );
 		$ffs = new AmdFFS( $group );
 		$data = $ffs->writeIntoVariable( $collection );

@@ -8,21 +8,17 @@
  * @since 2013.12
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
-use MediaWiki\Extensions\Translate\Utilities\StringComparators\StringComparator;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Utilities\StringComparators\StringComparator;
 
 class ExternalMessageSourceStateComparator {
 	/** Process all languages supported by the message group */
 	public const ALL_LANGUAGES = 'all languages';
 
-	/**
-	 * @var StringComparator
-	 */
+	/** @var StringComparator */
 	protected $stringComparator;
 
-	/**
-	 * @param StringComparator $stringComparator
-	 */
+	/** @param StringComparator $stringComparator */
 	public function __construct( StringComparator $stringComparator ) {
 		$this->stringComparator = $stringComparator;
 	}
@@ -129,9 +125,8 @@ class ExternalMessageSourceStateComparator {
 	) {
 		/* This throws a warning if message definitions are not yet
 		 * cached and will read the file for definitions. */
-		Wikimedia\suppressWarnings();
-		$wiki = $group->initCollection( $language );
-		Wikimedia\restoreWarnings();
+		// phpcs:disable Generic.PHP.NoSilencedErrors.Discouraged
+		$wiki = @$group->initCollection( $language );
 		$wiki->filter( 'hastranslation', false );
 		$wiki->loadTranslations();
 		$wikiKeys = $wiki->getMessageKeys();
@@ -233,10 +228,6 @@ class ExternalMessageSourceStateComparator {
 		$added = array_diff( $fileKeys, $wikiKeys );
 		foreach ( $added as $key ) {
 			$sourceContent = $file['MESSAGES'][$key];
-			if ( trim( $sourceContent ) === '' ) {
-				continue;
-			}
-
 			$changes->addAddition( $language, $key, $sourceContent );
 		}
 

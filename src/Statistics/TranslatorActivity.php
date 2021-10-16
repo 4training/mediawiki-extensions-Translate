@@ -1,22 +1,20 @@
 <?php
-/**
- * @file
- * @author Niklas Laxström
- * @license GPL-2.0-or-later
- */
+declare( strict_types = 1 );
 
-namespace MediaWiki\Extensions\Translate\Statistics;
+namespace MediaWiki\Extension\Translate\Statistics;
 
 use BagOStuff;
 use InvalidArgumentException;
 use JobQueueGroup;
-use Language;
+use MediaWiki\Languages\LanguageNameUtils;
 use PoolCounterWorkViaCallback;
 use Wikimedia\Timestamp\ConvertibleTimestamp;
 
 /**
  * Handles caching of translator activity.
  *
+ * @author Niklas Laxström
+ * @license GPL-2.0-or-later
  * @since 2020.04
  */
 class TranslatorActivity {
@@ -26,19 +24,18 @@ class TranslatorActivity {
 	private $cache;
 	private $query;
 	private $jobQueue;
-	private $languageValidator;
+	private $languageNameUtils;
 
 	public function __construct(
 		BagOStuff $cache,
 		TranslatorActivityQuery $query,
 		JobQueueGroup $jobQueue,
-		callable $languageValidator
+		LanguageNameUtils $languageNameUtils
 	) {
 		$this->cache = $cache;
 		$this->query = $query;
 		$this->jobQueue = $jobQueue;
-		// FIXME: use LanguageNameUtils once 1.33 is no longer supported
-		$this->languageValidator = $languageValidator;
+		$this->languageNameUtils = $languageNameUtils;
 	}
 
 	/**
@@ -77,11 +74,11 @@ class TranslatorActivity {
 	}
 
 	private function getCacheKey( string $language ): string {
-		return $this->cache->makeKey( 'translate-translator-activity-v1', $language );
+		return $this->cache->makeKey( 'translate-translator-activity-v4', $language );
 	}
 
 	private function isStale( array $value ): bool {
-		$age = ConvertibleTimestamp::now( TS_UNIX ) - $value['asOfTime'];
+		$age = intval( ConvertibleTimestamp::now( TS_UNIX ) ) - $value['asOfTime'];
 		return $age >= self::CACHE_STALE;
 	}
 
@@ -91,7 +88,7 @@ class TranslatorActivity {
 	}
 
 	private function doQueryAndCache( string $language ) {
-		$now = ConvertibleTimestamp::now( TS_UNIX );
+		$now = (int)ConvertibleTimestamp::now( TS_UNIX );
 
 		$work = new PoolCounterWorkViaCallback(
 			'TranslateFetchTranslators', "TranslateFetchTranslators-$language", [
@@ -117,13 +114,11 @@ class TranslatorActivity {
 		$this->cache->set( $cacheKey, $value, self::CACHE_TIME );
 	}
 
-	/**
-	 * Update cache for all languages, even if not stale.
-	 */
+	/** Update cache for all languages, even if not stale. */
 	public function updateAllLanguages(): void {
-		$now = ConvertibleTimestamp::now( TS_UNIX );
+		$now = (int)ConvertibleTimestamp::now( TS_UNIX );
 		foreach ( $this->query->inAllLanguages() as $language => $users ) {
-			if ( !Language::isKnownLanguageTag( $language ) ) {
+			if ( !$this->isValidLanguage( $language ) ) {
 				continue;
 			}
 
@@ -145,11 +140,13 @@ class TranslatorActivity {
 
 		$queriedValue = $this->doQueryAndCache( $language );
 		if ( !$queriedValue ) {
-			throw new StatisticsUnavailable( "Unable to load stats" );
+			throw new StatisticsUnavailable( 'Unable to load stats' );
 		}
 	}
 
 	private function isValidLanguage( string $language ): bool {
-		return call_user_func( $this->languageValidator, $language );
+		return $this->languageNameUtils->isKnownLanguageTag( $language );
 	}
 }
+
+class_alias( TranslatorActivity::class, '\MediaWiki\Extensions\Translate\TranslatorActivity' );

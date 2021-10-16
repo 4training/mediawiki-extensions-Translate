@@ -8,6 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\Rdbms\IDatabase;
 
@@ -34,14 +35,9 @@ class MessageGroupStats {
 	/// Do not defer updates. Meant for jobs like MessageGroupStatsRebuildJob.
 	public const FLAG_IMMEDIATE_WRITES = 4;
 
-	/**
-	 * @var array[]
-	 */
+	/** @var array[] */
 	protected static $updates = [];
-
-	/**
-	 * @var string[]
-	 */
+	/** @var string[] */
 	 private static $languages;
 
 	/**
@@ -547,9 +543,7 @@ class MessageGroupStats {
 		if ( $code === $wgTranslateDocumentationLanguageCode ) {
 			$ffs = $group->getFFS();
 			if ( $ffs instanceof GettextFFS ) {
-				/**
-				 * @var FileBasedMessageGroup $group
-				 */
+				/** @var FileBasedMessageGroup $group */
 				'@phan-var FileBasedMessageGroup $group';
 				$cache = $group->getMessageGroupCache( $group->getSourceLanguage() );
 				if ( $cache->exists() ) {
@@ -566,7 +560,7 @@ class MessageGroupStats {
 		}
 
 		$collection->filter( 'ignored' );
-		$collection->filter( 'optional' );
+		$collection->filterUntranslatedOptional();
 		// Store the count of real messages for later calculation.
 		$total = count( $collection );
 
@@ -624,6 +618,18 @@ class MessageGroupStats {
 				// Maybe another deferred update already processed these
 				if ( $updates === [] ) {
 					return;
+				}
+
+				// This path should only be hit during web requests
+				if ( count( $updates ) > 100 ) {
+					$groups = array_unique( array_column( $updates, 'tgs_group' ) );
+					LoggerFactory::getInstance( 'Translate' )->warning(
+						"Huge translation update of {count} rows for group(s) {groups}",
+						[
+							'count' => count( $updates ),
+							'groups' => implode( ', ', $groups ),
+						]
+					);
 				}
 
 				$primaryKey = [ 'tgs_group', 'tgs_lang' ];

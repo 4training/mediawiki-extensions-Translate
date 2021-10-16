@@ -1,5 +1,8 @@
 <?php
-use MediaWiki\Extensions\Translate\Jobs\GenericTranslateJob;
+
+use MediaWiki\Extension\Translate\Jobs\GenericTranslateJob;
+use MediaWiki\Extension\Translate\PageTranslation\TranslationUnit;
+use MediaWiki\MediaWikiServices;
 
 /**
  * Job for updating translation units and translation pages when
@@ -12,9 +15,7 @@ use MediaWiki\Extensions\Translate\Jobs\GenericTranslateJob;
  * @since 2016.03
  */
 class TranslationsUpdateJob extends GenericTranslateJob {
-	/**
-	 * @inheritDoc
-	 */
+	/** @inheritDoc */
 	public function __construct( Title $title, $params = [] ) {
 		parent::__construct( __CLASS__, $title, $params );
 	}
@@ -26,7 +27,7 @@ class TranslationsUpdateJob extends GenericTranslateJob {
 	 * unit pages.
 	 *
 	 * @param TranslatablePage $page
-	 * @param TPSection[] $sections
+	 * @param TranslationUnit[] $sections
 	 * @return TranslationsUpdateJob
 	 * @since 2018.07
 	 */
@@ -45,20 +46,21 @@ class TranslationsUpdateJob extends GenericTranslateJob {
 		// For performance reasons, message index rebuild is run a separate job after
 		// everything else is updated.
 
+		// START: This section does not care about replication lag
 		$this->logInfo( 'Starting TranslationsUpdateJob' );
 
-		$page = TranslatablePage::newFromTitle( $this->title );
 		$sections = $this->params[ 'sections' ];
 		foreach ( $sections as $index => $section ) {
 			// Old jobs stored sections as objects because they were serialized and
 			// unserialized transparently. That is no longer supported, so we
 			// convert manually to primitive types first (to an PHP array).
 			if ( is_array( $section ) ) {
-				$sections[ $index ] = TPSection::unserializeFromArray( $section );
+				$sections[ $index ] = TranslationUnit::unserializeFromArray( $section );
 			}
 		}
 
 		// Units should be updated before the render jobs are run
+		$page = TranslatablePage::newFromTitle( $this->title );
 		$unitJobs = self::getTranslationUnitJobs( $page, $sections );
 		foreach ( $unitJobs as $job ) {
 			$job->run();
@@ -68,6 +70,12 @@ class TranslationsUpdateJob extends GenericTranslateJob {
 			'Finished running ' . count( $unitJobs ) . ' MessageUpdate jobs for '
 			. count( $sections ) . ' sections'
 		);
+		// END: This section does not care about replication lag
+
+		$lb = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
+		if ( !$lb->waitForReplication() ) {
+			$this->logWarning( 'Continuing despite replication lag' );
+		}
 
 		// Ensure we are using the latest group definitions. This is needed so
 		// that in long running scripts we do see the page which was just
@@ -109,12 +117,13 @@ class TranslationsUpdateJob extends GenericTranslateJob {
 
 	/**
 	 * Creates jobs needed to create or update all translation page definitions.
+	 *
 	 * @param TranslatablePage $page
-	 * @param TPSection[] $sections
-	 * @return Job[]
+	 * @param TranslationUnit[] $sections
+	 * @return RunnableJob[]
 	 * @since 2013-01-28
 	 */
-	public static function getTranslationUnitJobs( TranslatablePage $page, array $sections ) {
+	private static function getTranslationUnitJobs( TranslatablePage $page, array $sections ): array {
 		$jobs = [];
 
 		$code = $page->getSourceLanguageCode();
@@ -134,10 +143,10 @@ class TranslationsUpdateJob extends GenericTranslateJob {
 	/**
 	 * Creates jobs needed to create or update all translation pages.
 	 * @param TranslatablePage $page
-	 * @return Job[]
+	 * @return RunnableJob[]
 	 * @since 2013-01-28
 	 */
-	public static function getRenderJobs( TranslatablePage $page ) {
+	public static function getRenderJobs( TranslatablePage $page ): array {
 		$jobs = [];
 
 		$jobTitles = $page->getTranslationPages();

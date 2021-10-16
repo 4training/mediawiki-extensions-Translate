@@ -1,13 +1,15 @@
 {
 	"@metadata": {
 		"authors": [
+			"AVSmalnad77",
 			"Dimension10",
 			"Dipin",
 			"Munirathnam",
 			"Nayvik",
 			"Omshivaprakash",
 			"VASANTH S.N.",
-			"Yogesh"
+			"Yogesh",
+			"ಮಲ್ನಾಡಾಚ್ ಕೊಂಕ್ಣೊ"
 		]
 	},
 	"translate": "ಭಾಷಾಂತರಿಸಿ",
@@ -37,11 +39,9 @@
 	"translate-ignored": "ಕಡೆಗಣಿಸಲ್ಪಟ್ಟ",
 	"translate-edit-title": "\"$1\"ನ್ನು ಸಂಪಾದಿಸು",
 	"translate-edit-definition": "ಸಂದೇಶ ವ್ಯಾಖ್ಯೆ",
-	"translate-edit-translation": "ಅನುವಾದ",
 	"translate-edit-contribute": "ನೆರವಾಗು",
 	"translate-edit-no-information": "\"ಈ ಸಂದೇಶಕ್ಕೆ ಯಾವುದೇ ದಾಖಲೆಗಳಿಲ್ಲ.\"\n\"ನಿಮಗೆ ಈ ಸಂದೇಶ ಎಲ್ಲಿಯಾದರೂ ಅಥವಾ ಹೇಗಾದರೂ ಉಪಯೋಗದಲ್ಲಿರುವುದು ತಿಳಿದಿದ್ದರೆ,ನೀವು ಇದಕ್ಕೆ ತಕ್ಕ ದಾಖಲೆಗಳನ್ನು ಸೇರಿಸಿ ಬೇರಿ ಭಾಷಾಂತರಕಾರರಿಗೆ ಸಹಾಯ ಮಾಡಬಹುದು.\"",
 	"translate-edit-information": "ಸಂದೇಶದ ಬಗ್ಗೆ ಮಾಹಿತಿ ($1)",
-	"translate-edit-in-other-languages": "ಬೇರೆ ಭಾಷೆಗಳಲ್ಲಿ ಸಂದೇಶ",
 	"translate-edit-warnings": "ಅಸಂಪೂರ್ಣ ಭಾಷಾಂತರದ ಬಗ್ಗೆ ಎಚ್ಚರಿಕೆ",
 	"translate-edit-tmmatch": "$1% ಹೊ೦ದಿಸಿ",
 	"translate-use-suggestion": "ಈಗಿನ ಭಾಷಾಂತರವನ್ನು ಈ ಸಲಹೆಯೊಂದಿಗೆ ಬದಲಾಯಿಸಿ",
@@ -70,7 +70,7 @@
 	"translate-statsf-scale-months": "ತಿಂಗಳುಗಳು",
 	"translate-statsf-scale-weeks": "ವಾರಗಳು",
 	"translate-statsf-scale-days": "ದಿನಗಳು",
-	"translate-statsf-scale-hours": "ಘಂಟೆಗಳು",
+	"translate-statsf-scale-hours": "ಗಂಟೆಗಳು",
 	"translate-statsf-count": "ಅಳತೆ:",
 	"translate-statsf-count-edits": "ಸಂಪಾದನೆಗಳ ಸಂಖ್ಯೆ",
 	"translate-statsf-count-users": "ಸಕ್ರಿಯ ಭಾಷಾಂತರಕಾರರು",

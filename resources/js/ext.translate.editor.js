@@ -210,7 +210,7 @@
 				translateEditor = this;
 
 			mw.hook( 'mw.translate.editor.beforeSubmit' ).fire( translateEditor.$editor );
-			translation = translateEditor.$editor.find( '.editcolumn textarea' ).val();
+			translation = translateEditor.$editor.find( '.tux-textarea-translation' ).val();
 			editSummary = translateEditor.$editor.find( '.tux-input-editsummary' ).val() || '';
 
 			translateEditor.saving = true;
@@ -244,16 +244,6 @@
 				if ( editResp.result === 'Success' ) {
 					translateEditor.message.translation = translation;
 					translateEditor.onSaveSuccess();
-				// Handle errors
-				// BC MW < 1.34
-				} else if ( editResp.spamblacklist ) {
-					translateEditor.onSaveFail( mw.msg( 'spamprotectiontext' ) );
-				// BC MW < 1.34
-				} else if ( editResp.info &&
-					editResp.info.indexOf( 'Hit AbuseFilter:' ) === 0 &&
-					editResp.warning
-				) {
-					translateEditor.onSaveFail( editResp.warning );
 				} else {
 					translateEditor.onSaveFail( mw.msg( 'tux-save-unknown-error' ) );
 					mw.log( response, xhr );
@@ -505,7 +495,7 @@
 				$editSummary,
 				$editSummaryBlock,
 				$discardChangesButton = $( [] ),
-				$saveButton,
+				$saveButton = $( [] ),
 				$requestRight,
 				$skipButton,
 				$cancelButton,
@@ -689,9 +679,7 @@
 			} );
 
 			$textarea.on( 'textchange', function () {
-				var $textarea = $( this ),
-					$saveButton = translateEditor.$editor.find( '.tux-editor-save-button' ),
-					$pasteSourceButton = translateEditor.$editor.find( '.tux-editor-paste-original-button' ),
+				var $pasteSourceButton = translateEditor.$editor.find( '.tux-editor-paste-original-button' ),
 					original = translateEditor.message.translation || '',
 					current = $textarea.val() || '';
 
@@ -1391,7 +1379,7 @@
 		},
 
 		/**
-		 * Makes the textare large enough for insertables and positions the insertables.
+		 * Makes the textarea large enough for insertables and positions the insertables.
 		 *
 		 * @param {jQuery} $textarea Text area.
 		 */

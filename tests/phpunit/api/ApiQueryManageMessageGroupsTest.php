@@ -4,22 +4,20 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
 
 /**
  * @group medium
  * @covers ApiQueryManageMessageGroups
  */
 class ApiQueryManageMessageGroupsTest extends ApiTestCase {
-	/**
-	 * @var User
-	 */
+	/** @var User */
 	protected $user;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->setMwGlobals( [
-			'wgTranslateCacheDirectory' => __DIR__ . '/../data'
+			'wgTranslateCacheDirectory' => $this->getNewTempDirectory()
 		] );
 
 		$this->setGroupPermissions( 'translate-admin', 'translate-manage', true );
@@ -49,7 +47,7 @@ class ApiQueryManageMessageGroupsTest extends ApiTestCase {
 				'mmggroupId' => 'testgroup-api',
 				'mmgmessageKey' => 'keyAdded1',
 				'mmgchangesetName' => MessageChangeStorage::DEFAULT_NAME,
-			], null, false,  $this->user
+			], null, false, $this->user
 		);
 
 		$apiRespose = $data[0]['query']['managemessagegroups'][0];
@@ -108,16 +106,5 @@ class ApiQueryManageMessageGroupsTest extends ApiTestCase {
 		$changeData['testgroup-api'] = $sourceChanges;
 
 		MessageChangeStorage::writeChanges( $changeData, self::getStoragePath() );
-	}
-
-	public static function tearDownAfterClass() : void {
-		parent::tearDownAfterClass();
-
-		global $wgTranslateCacheDirectory;
-		$tmp = $wgTranslateCacheDirectory;
-		$wgTranslateCacheDirectory = __DIR__ . '/../data';
-		$filePath = self::getStoragePath();
-		unlink( $filePath );
-		$wgTranslateCacheDirectory = $tmp;
 	}
 }

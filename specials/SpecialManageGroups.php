@@ -1,17 +1,14 @@
 <?php
-/**
- * Implements special page for group management, where file based message
- * groups are be managed.
- *
- * @file
- * @author Niklas Laxström
- * @author Siebrand Mazeland
- * @license GPL-2.0-or-later
- */
+declare( strict_types = 1 );
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Synchronization\DisplayGroupSynchronizationInfo;
+use MediaWiki\Extension\Translate\Synchronization\GroupSynchronizationCache;
+use MediaWiki\Extension\Translate\Synchronization\MessageUpdateParameter;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\RevisionLookup;
 use MediaWiki\Revision\SlotRecord;
+use OOUI\ButtonInputWidget;
 
 /**
  * Class for special page Special:ManageMessageGroups. On this special page
@@ -19,30 +16,44 @@ use MediaWiki\Revision\SlotRecord;
  * allows updating of the file cache, import and fuzzy for source language
  * messages, as well as import/update of messages in other languages.
  *
+ * @author Niklas Laxström
+ * @author Siebrand Mazeland
  * @ingroup SpecialPage TranslateSpecialPage
- * Rewritten in 2012-04-23
+ * @license GPL-2.0-or-later
  */
 class SpecialManageGroups extends SpecialPage {
+	private const GROUP_SYNC_INFO_WRAPPER_CLASS = 'smg-group-sync-cache-info';
 	private const RIGHT = 'translate-manage';
-
-	/**
-	 * @var DifferenceEngine
-	 */
+	/** @var DifferenceEngine */
 	protected $diff;
-
-	/**
-	 * @var string Path to the change cdb file.
-	 */
+	/** @var string Path to the change cdb file. */
 	protected $cdb;
-
-	/**
-	 * @var bool Has the necessary right specified by the RIGHT constant
-	 */
+	/** @var bool Has the necessary right specified by the RIGHT constant */
 	protected $hasRight = false;
+	/** @var Language */
+	private $contLang;
+	/** @var NamespaceInfo */
+	private $nsInfo;
+	/** @var RevisionLookup */
+	private $revLookup;
+	/** @var GroupSynchronizationCache */
+	private $synchronizationCache;
+	/** @var DisplayGroupSynchronizationInfo */
+	private $displayGroupSyncInfo;
 
-	public function __construct() {
+	public function __construct(
+		Language $contLang,
+		NamespaceInfo $nsInfo,
+		RevisionLookup $revLookup,
+		GroupSynchronizationCache $synchronizationCache
+	) {
 		// Anyone is allowed to see, but actions are restricted
 		parent::__construct( 'ManageMessageGroups' );
+		$this->contLang = $contLang;
+		$this->nsInfo = $nsInfo;
+		$this->revLookup = $revLookup;
+		$this->synchronizationCache = $synchronizationCache;
+		$this->displayGroupSyncInfo = new DisplayGroupSynchronizationInfo( $this, $this->getLinkRenderer() );
 	}
 
 	public function doesWrites() {
@@ -61,7 +72,7 @@ class SpecialManageGroups extends SpecialPage {
 		$this->setHeaders();
 
 		$out = $this->getOutput();
-		$out->addModuleStyles( 'ext.translate.special.managegroups.styles' );
+		$out->addModuleStyles( 'ext.translate.specialpages.styles' );
 		$out->addModules( 'ext.translate.special.managegroups' );
 		$out->addHelpLink( 'Help:Extension:Translate/Group_management' );
 
@@ -69,6 +80,23 @@ class SpecialManageGroups extends SpecialPage {
 
 		$this->cdb = MessageChangeStorage::getCdbPath( $name );
 		if ( !MessageChangeStorage::isValidCdbName( $name ) || !file_exists( $this->cdb ) ) {
+			if ( $this->getConfig()->get( 'TranslateGroupSynchronizationCache' ) ) {
+				$out->addHTML(
+					$this->displayGroupSyncInfo->getGroupsInSyncHtml(
+						$this->synchronizationCache->getGroupsInSync(),
+						self::GROUP_SYNC_INFO_WRAPPER_CLASS
+					)
+				);
+
+				$out->addHTML(
+					$this->displayGroupSyncInfo->getHtmlForGroupsWithError(
+						$this->synchronizationCache,
+						self::GROUP_SYNC_INFO_WRAPPER_CLASS,
+						$this->getLanguage()
+					)
+				);
+			}
+
 			// @todo Tell them when changes was last checked/process
 			// or how to initiate recheck.
 			$out->addWikiMsg( 'translate-smg-nochanges' );
@@ -98,7 +126,7 @@ class SpecialManageGroups extends SpecialPage {
 	 * How many changes can be shown per page.
 	 * @return int
 	 */
-	protected function getLimit() {
+	protected function getLimit(): int {
 		$limits = [
 			1000, // Default max
 			ini_get( 'max_input_vars' ),
@@ -107,10 +135,10 @@ class SpecialManageGroups extends SpecialPage {
 		];
 		// Ignore things not set
 		$limits = array_filter( $limits );
-		return min( $limits );
+		return (int)min( $limits );
 	}
 
-	protected function getLegend() {
+	protected function getLegend(): string {
 		$text = $this->diff->addHeader(
 			'',
 			$this->msg( 'translate-smg-left' )->escaped(),
@@ -120,9 +148,7 @@ class SpecialManageGroups extends SpecialPage {
 		return Html::rawElement( 'div', [ 'class' => 'mw-translate-smg-header' ], $text );
 	}
 
-	protected function showChanges( $limit ) {
-		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
-
+	protected function showChanges( int $limit ): void {
 		$diff = new DifferenceEngine( $this->getContext() );
 		$diff->showDiffStyle();
 		$diff->setReducedLineNumbers();
@@ -142,7 +168,24 @@ class SpecialManageGroups extends SpecialPage {
 		);
 
 		// The above count as three
-		$limit = $limit - 3;
+		$limit -= 3;
+
+		if ( $this->getConfig()->get( 'TranslateGroupSynchronizationCache' ) ) {
+			$out->addHTML(
+				$this->displayGroupSyncInfo->getGroupsInSyncHtml(
+					$this->synchronizationCache->getGroupsInSync(),
+					self::GROUP_SYNC_INFO_WRAPPER_CLASS
+				)
+			);
+
+			$out->addHTML(
+				$this->displayGroupSyncInfo->getHtmlForGroupsWithError(
+					$this->synchronizationCache,
+					self::GROUP_SYNC_INFO_WRAPPER_CLASS,
+					$this->getLanguage()
+				)
+			);
+		}
 
 		$reader = \Cdb\Reader::open( $this->cdb );
 		$groups = $this->getGroupsFromCdb( $reader );
@@ -155,7 +198,7 @@ class SpecialManageGroups extends SpecialPage {
 			// Reduce page existance queries to one per group
 			$lb = new LinkBatch();
 			$ns = $group->getNamespace();
-			$isCap = MWNamespace::isCapitalized( $ns );
+			$isCap = $this->nsInfo->isCapitalized( $ns );
 			$languages = $sourceChanges->getLanguages();
 
 			foreach ( $languages as $language ) {
@@ -165,7 +208,7 @@ class SpecialManageGroups extends SpecialPage {
 						// Constructing title objects is way slower
 						$key = $params['key'];
 						if ( $isCap ) {
-							$key = $contLang->ucfirst( $key );
+							$key = $this->contLang->ucfirst( $key );
 						}
 						$lb->add( $ns, "$key/$language" );
 					}
@@ -182,7 +225,7 @@ class SpecialManageGroups extends SpecialPage {
 
 				foreach ( $changes as $type => $messages ) {
 					foreach ( $messages as $params ) {
-						$change = $this->formatChange( $group, $language, $type, $params, $limit );
+						$change = $this->formatChange( $group, $sourceChanges, $language, $type, $params, $limit );
 						$out->addHTML( $change );
 
 						if ( $limit <= 0 ) {
@@ -199,28 +242,31 @@ class SpecialManageGroups extends SpecialPage {
 			}
 		}
 
-		$attribs = [ 'type' => 'submit', 'class' => 'mw-translate-smg-submit' ];
-		if ( !$this->hasRight ) {
-			$attribs['disabled'] = 'disabled';
-			$attribs['title'] = $this->msg( 'translate-smg-notallowed' )->text();
-		}
-		$button = Html::element( 'button', $attribs, $this->msg( 'translate-smg-submit' )->text() );
+		$out->enableOOUI();
+		$button = new ButtonInputWidget( [
+			'type' => 'submit',
+			'label' => $this->msg( 'translate-smg-submit' )->plain(),
+			'disabled' => !$this->hasRight ? 'disabled' : null,
+			'classes' => [ 'mw-translate-smg-submit' ],
+			'title' => !$this->hasRight ? $this->msg( 'translate-smg-notallowed' )->plain() : null,
+			'flags' => [ 'primary', 'progressive' ],
+		] );
 		$out->addHTML( $button );
 		$out->addHTML( Html::closeElement( 'form' ) );
 	}
 
-	/**
-	 * @param MessageGroup $group
-	 * @param string $language
-	 * @param string $type
-	 * @param array $params
-	 * @param int &$limit
-	 * @return string HTML
-	 */
-	protected function formatChange( MessageGroup $group, $language, $type, $params, &$limit ) {
+	protected function formatChange(
+		MessageGroup $group,
+		MessageSourceChange $changes,
+		string $language,
+		string $type,
+		array $params,
+		int &$limit
+	): string {
 		$key = $params['key'];
 		$title = Title::makeTitleSafe( $group->getNamespace(), "$key/$language" );
 		$id = self::changeId( $group->getId(), $language, $type, $key );
+		$noticeHtml = '';
 
 		if ( $title && $type === 'addition' && $title->exists() ) {
 			// The message has for some reason dropped out from cache
@@ -231,6 +277,7 @@ class SpecialManageGroups extends SpecialPage {
 			// forever and will prevent rebuilding the cache, which
 			// leads to many other annoying problems.
 			$type = 'change';
+			$noticeHtml .= Html::warningBox( $this->msg( 'translate-manage-key-reused' )->text() );
 		} elseif ( $title && ( $type === 'deletion' || $type === 'change' ) && !$title->exists() ) {
 			// This happens if a message key has been renamed
 			// The change can be ignored.
@@ -242,30 +289,56 @@ class SpecialManageGroups extends SpecialPage {
 
 		if ( $type === 'deletion' ) {
 			$wiki = ContentHandler::getContentText(
-				MediaWikiServices::getInstance()
-					->getRevisionLookup()
+				$this->revLookup
 					->getRevisionByTitle( $title )
 					->getContent( SlotRecord::MAIN )
 			);
+
+			if ( $wiki === '' ) {
+				$noticeHtml .= Html::warningBox(
+					$this->msg( 'translate-manage-empty-content' )->text()
+				);
+			}
+
 			$oldContent = ContentHandler::makeContent( $wiki, $title );
 			$newContent = ContentHandler::makeContent( '', $title );
-
 			$this->diff->setContent( $oldContent, $newContent );
-
-			$text = $this->diff->getDiff( $titleLink, '' );
+			$text = $this->diff->getDiff( $titleLink, '', $noticeHtml );
 		} elseif ( $type === 'addition' ) {
+			$menu = '';
+			$sourceLanguage = $group->getSourceLanguage();
+			if ( $sourceLanguage === $language ) {
+				if ( $this->hasRight ) {
+					$menu = Html::rawElement(
+						'button',
+						[
+							'class' => 'smg-rename-actions',
+							'type' => 'button',
+							'data-group-id' => $group->getId(),
+							'data-lang' => $language,
+							'data-msgkey' => $key,
+							'data-msgtitle' => $title->getFullText()
+						],
+						''
+					);
+				}
+			} elseif ( !self::isMessageDefinitionPresent( $group, $changes, $key ) ) {
+				$noticeHtml .= Html::warningBox(
+					$this->msg( 'translate-manage-source-message-not-found' )->text(),
+					'mw-translate-smg-notice-important'
+				);
+			}
+
+			if ( $params['content'] === '' ) {
+				$noticeHtml .= Html::warningBox(
+					$this->msg( 'translate-manage-empty-content' )->text()
+				);
+			}
+
 			$oldContent = ContentHandler::makeContent( '', $title );
 			$newContent = ContentHandler::makeContent( $params['content'], $title );
-
 			$this->diff->setContent( $oldContent, $newContent );
-			$menu = '';
-			if ( $group->getSourceLanguage() === $language && $this->hasRight ) {
-				$menu = Html::rawElement( 'button', [
-					'class' => 'smg-rename-actions', 'type' => 'button',
-					'data-group-id' => $group->getId(), 'data-lang' => $language, 'data-msgkey' => $key,
-					'data-msgtitle' => $title->getFullText() ], '' );
-			}
-			$text = $this->diff->getDiff( '', $titleLink . $menu );
+			$text = $this->diff->getDiff( '', $titleLink . $menu, $noticeHtml );
 		} elseif ( $type === 'change' ) {
 			$wiki = TranslateUtils::getContentForTitle( $title, true );
 
@@ -288,7 +361,7 @@ class SpecialManageGroups extends SpecialPage {
 			$newContent = ContentHandler::makeContent( $params['content'], $title );
 
 			$this->diff->setContent( $oldContent, $newContent );
-			$text .= $this->diff->getDiff( $titleLink, $actions );
+			$text .= $this->diff->getDiff( $titleLink, $actions, $noticeHtml );
 		}
 
 		$hidden = Html::hidden( $id, 1 );
@@ -304,7 +377,7 @@ class SpecialManageGroups extends SpecialPage {
 		return Html::rawElement( 'div', [ 'class' => $classes ], $text );
 	}
 
-	protected function processSubmit() {
+	protected function processSubmit(): void {
 		$req = $this->getRequest();
 		$out = $this->getOutput();
 		$errorGroups = [];
@@ -331,20 +404,33 @@ class SpecialManageGroups extends SpecialPage {
 				$languages = $sourceChanges->getLanguages();
 				foreach ( $languages as $language ) {
 					// Handle changes, additions, deletions
-					$this->handleModificationsSubmit( $group, $sourceChanges, $req,
-						$language, $postponed, $groupModificationJobs );
+					$this->handleModificationsSubmit(
+						$group,
+						$sourceChanges,
+						$req,
+						$language,
+						$postponed,
+						$groupModificationJobs
+					);
 
 					// Handle renames, this might also add modification jobs based on user selection.
-					$this->handleRenameSubmit( $group, $sourceChanges, $req, $language,
-						$postponed, $groupRenameJobData, $groupModificationJobs );
+					$this->handleRenameSubmit(
+						$group,
+						$sourceChanges,
+						$req,
+						$language,
+						$postponed,
+						$groupRenameJobData,
+						$groupModificationJobs
+					);
 
 					if ( !isset( $postponed[$groupId][$language] ) ) {
 						$group->getMessageGroupCache( $language )->create();
 					}
 				}
 
-				$modificationJobs = array_merge( $modificationJobs, $groupModificationJobs );
-				$renameJobData = array_merge( $renameJobData, $groupRenameJobData );
+				$modificationJobs[$groupId] = $groupModificationJobs;
+				$renameJobData[$groupId] = $groupRenameJobData;
 			} catch ( Exception $e ) {
 				error_log(
 					"SpecialManageGroups: Error in processSubmit. Group: $groupId\n" .
@@ -355,9 +441,8 @@ class SpecialManageGroups extends SpecialPage {
 			}
 		}
 
-		JobQueueGroup::singleton()->push( MessageIndexRebuildJob::newJob() );
-		JobQueueGroup::singleton()->push( $modificationJobs );
-		JobQueueGroup::singleton()->push( $this->createRenameJobs( $renameJobData ) );
+		$renameJobs = $this->createRenameJobs( $renameJobData );
+		$this->startSync( $modificationJobs, $renameJobs );
 
 		$reader->close();
 		rename( $this->cdb, $this->cdb . '-' . wfTimestamp() );
@@ -384,7 +469,12 @@ class SpecialManageGroups extends SpecialPage {
 		}
 	}
 
-	protected static function changeId( $groupId, $language, $type, $key ) {
+	protected static function changeId(
+		string $groupId,
+		string $language,
+		string $type,
+		string $key
+	): string {
 		return 'smg/' . substr( sha1( "$groupId/$language/$type/$key" ), 0, 7 );
 	}
 
@@ -394,9 +484,8 @@ class SpecialManageGroups extends SpecialPage {
 	 * @since 2012-05-14
 	 * @param Skin $skin
 	 * @param array &$tabs
-	 * @return true
 	 */
-	public static function tabify( Skin $skin, array &$tabs ) {
+	public static function tabify( Skin $skin, array &$tabs ): void {
 		$title = $skin->getTitle();
 		$specialPageFactory = MediaWikiServices::getInstance()->getSpecialPageFactory();
 		[ $alias, ] = $specialPageFactory->resolveAlias( $title->getText() );
@@ -408,7 +497,7 @@ class SpecialManageGroups extends SpecialPage {
 			'TranslationStats' => 'views',
 		];
 		if ( !isset( $pagesInGroup[$alias] ) ) {
-			return true;
+			return;
 		}
 
 		$skin->getOutput()->addModuleStyles( 'ext.translate.tabgroup' );
@@ -429,21 +518,40 @@ class SpecialManageGroups extends SpecialPage {
 				'class' => $alias === $spName ? 'selected' : '',
 			];
 		}
-
-		return true;
 	}
 
 	/**
-	 * Displays renames
+	 * Check if the message definition is present as an incoming addition
+	 * OR exists already on the wiki
+	 *
+	 * @internal - For internal use only
 	 * @param MessageGroup $group
-	 * @param MessageSourceChange $sourceChanges
-	 * @param OutputPage $out
-	 * @param string $language
-	 * @param int &$limit
+	 * @param MessageSourceChange $changes
+	 * @param string $msgKey
+	 * @return bool
 	 */
-	protected function showRenames(
-		MessageGroup $group, MessageSourceChange $sourceChanges, OutputPage $out, $language, &$limit
-	) {
+	private static function isMessageDefinitionPresent(
+		MessageGroup $group,
+		MessageSourceChange $changes,
+		string $msgKey
+	): bool {
+		$sourceLanguage = $group->getSourceLanguage();
+		if ( $changes->findMessage( $sourceLanguage, $msgKey, [ MessageSourceChange::ADDITION ] ) ) {
+			return true;
+		}
+
+		$namespace = $group->getNamespace();
+		$sourceHandle = new MessageHandle( Title::makeTitle( $namespace, $msgKey ) );
+		return $sourceHandle->isValid();
+	}
+
+	private function showRenames(
+		MessageGroup $group,
+		MessageSourceChange $sourceChanges,
+		OutputPage $out,
+		string $language,
+		int &$limit
+	): void {
 		$changes = $sourceChanges->getRenames( $language );
 		foreach ( $changes as $key => $params ) {
 			if ( !isset( $changes[$key] ) ) {
@@ -462,9 +570,13 @@ class SpecialManageGroups extends SpecialPage {
 			$secondKey = $sourceChanges->getMatchedKey( $language, $key );
 			$secondMsg = $sourceChanges->getMatchedMessage( $language, $key );
 
-			if ( $sourceChanges->isPreviousState(
-				$language, $key, [ MessageSourceChange::ADDITION, MessageSourceChange::CHANGE ]
-			) ) {
+			if (
+				$sourceChanges->isPreviousState(
+					$language,
+					$key,
+					[ MessageSourceChange::ADDITION, MessageSourceChange::CHANGE ]
+				)
+			) {
 				$addedMsg = $firstMsg;
 				$deletedMsg = $secondMsg;
 			} else {
@@ -494,18 +606,14 @@ class SpecialManageGroups extends SpecialPage {
 		}
 	}
 
-	/**
-	 * @param MessageGroup $group
-	 * @param array $addedMsg
-	 * @param array $deletedMsg
-	 * @param string $language
-	 * @param bool $isEqual Are the renamed messages equal
-	 * @param int &$limit
-	 * @return string HTML
-	 */
-	protected function formatRename(
-		MessageGroup $group, $addedMsg, $deletedMsg, $language, $isEqual, &$limit
-	) {
+	private function formatRename(
+		MessageGroup $group,
+		array $addedMsg,
+		array $deletedMsg,
+		string $language,
+		bool $isEqual,
+		int &$limit
+	): string {
 		$addedKey = $addedMsg['key'];
 		$deletedKey = $deletedMsg['key'];
 		$actions = '';
@@ -526,7 +634,7 @@ class SpecialManageGroups extends SpecialPage {
 			}
 
 			$label = $this->msg( 'translate-manage-action-rename' )->text();
-			$actions .= Xml::radioLabel( $label, "msg/$id", "rename", "imp/$id",  $renameSelected );
+			$actions .= Xml::radioLabel( $label, "msg/$id", "rename", "imp/$id", $renameSelected );
 		} else {
 			$label = $this->msg( 'translate-manage-action-import' )->text();
 			$actions .= Xml::radioLabel( $label, "msg/$id", "import", "imp/$id", true );
@@ -546,11 +654,16 @@ class SpecialManageGroups extends SpecialPage {
 		$menu = '';
 		if ( $group->getSourceLanguage() === $language && $this->hasRight ) {
 			// Only show rename and add as new option for source language.
-			$menu = Html::rawElement( 'button', [
-				'class' => 'smg-rename-actions', 'type' => 'button',
-				'data-group-id' => $group->getId(), 'data-msgkey' => $addedKey,
-				'data-msgtitle' => $addedTitle->getFullText()
-			], '' );
+			$menu = Html::rawElement(
+				'button',
+				[
+					'class' => 'smg-rename-actions',
+					'type' => 'button',
+					'data-group-id' => $group->getId(),
+					'data-msgkey' => $addedKey,
+					'data-msgtitle' => $addedTitle->getFullText()
+				], ''
+			);
 		}
 
 		$actions = Html::rawElement( 'div', [ 'class' => 'smg-change-import-options' ], $actions );
@@ -565,23 +678,21 @@ class SpecialManageGroups extends SpecialPage {
 		$limit--;
 		$text .= $hidden;
 
-		return Html::rawElement( 'div',
-			[ 'class' => 'mw-translate-smg-change smg-change-rename' ], $text );
+		return Html::rawElement(
+			'div',
+			[ 'class' => 'mw-translate-smg-change smg-change-rename' ],
+			$text
+		);
 	}
 
-	/**
-	 * @param array $currentMsg
-	 * @param MessageSourceChange $sourceChanges
-	 * @param string $languageCode
-	 * @param int $groupNamespace
-	 * @param string $selectedVal
-	 * @param bool $isSourceLang
-	 * @return ?array
-	 */
-	protected function getRenameJobParams(
-		$currentMsg, MessageSourceChange $sourceChanges, $languageCode,
-		$groupNamespace, $selectedVal, $isSourceLang = true
-	) {
+	private function getRenameJobParams(
+		array $currentMsg,
+		MessageSourceChange $sourceChanges,
+		string $languageCode,
+		int $groupNamespace,
+		string $selectedVal,
+		bool $isSourceLang = true
+	): ?array {
 		if ( $selectedVal === 'ignore' ) {
 			return null;
 		}
@@ -592,9 +703,13 @@ class SpecialManageGroups extends SpecialPage {
 		$matchedMsg = $sourceChanges->getMatchedMessage( $languageCode, $currentMsgKey );
 		$matchedMsgKey = $matchedMsg['key'];
 
-		if ( $sourceChanges->isPreviousState( $languageCode, $currentMsgKey, [
-			MessageSourceChange::ADDITION, MessageSourceChange::CHANGE
-		] ) ) {
+		if (
+			$sourceChanges->isPreviousState(
+				$languageCode,
+				$currentMsgKey,
+				[ MessageSourceChange::ADDITION, MessageSourceChange::CHANGE ]
+			)
+		) {
 			$params['target'] = $matchedMsgKey;
 			$params['replacement'] = $currentMsgKey;
 			$replacementContent = $currentMsg['content'];
@@ -604,11 +719,7 @@ class SpecialManageGroups extends SpecialPage {
 			$replacementContent = $matchedMsg['content'];
 		}
 
-		if ( $selectedVal === 'renamefuzzy' ) {
-			$params['fuzzy'] = 'fuzzy';
-		} else {
-			$params['fuzzy'] = false;
-		}
+		$params['fuzzy'] = $selectedVal === 'renamefuzzy';
 
 		$params['content'] = $replacementContent;
 
@@ -623,9 +734,15 @@ class SpecialManageGroups extends SpecialPage {
 		return $params;
 	}
 
-	protected function handleRenameSubmit( MessageGroup $group, MessageSourceChange $sourceChanges,
-		WebRequest $req, $language, &$postponed, &$jobData, &$modificationJobs
-	) {
+	private function handleRenameSubmit(
+		MessageGroup $group,
+		MessageSourceChange $sourceChanges,
+		WebRequest $req,
+		string $language,
+		array &$postponed,
+		array &$jobData,
+		array &$modificationJobs
+	): void {
 		$groupId = $group->getId();
 		$renames = $sourceChanges->getRenames( $language );
 		$isSourceLang = $group->getSourceLanguage() === $language;
@@ -639,7 +756,13 @@ class SpecialManageGroups extends SpecialPage {
 			$id = self::changeId( $groupId, $language, MessageSourceChange::RENAME, $key );
 
 			[ $renameMissing, $isCurrentKeyPresent ] = $this->isRenameMissing(
-				$req, $sourceChanges, $id, $key, $language, $groupId, $isSourceLang
+				$req,
+				$sourceChanges,
+				$id,
+				$key,
+				$language,
+				$groupId,
+				$isSourceLang
 			);
 
 			if ( $renameMissing ) {
@@ -656,7 +779,12 @@ class SpecialManageGroups extends SpecialPage {
 
 			$selectedVal = $req->getVal( "msg/$id" );
 			$jobParams = $this->getRenameJobParams(
-				$params, $sourceChanges, $language, $groupNamespace, $selectedVal, $isSourceLang
+				$params,
+				$sourceChanges,
+				$language,
+				$groupNamespace,
+				$selectedVal,
+				$isSourceLang
 			);
 
 			if ( $jobParams === null ) {
@@ -687,10 +815,14 @@ class SpecialManageGroups extends SpecialPage {
 		}
 	}
 
-	protected function handleModificationsSubmit(
-		MessageGroup $group, MessageSourceChange $sourceChanges, WebRequest $req,
-		$language, &$postponed, &$messageUpdateJob
-	) {
+	private function handleModificationsSubmit(
+		MessageGroup $group,
+		MessageSourceChange $sourceChanges,
+		WebRequest $req,
+		string $language,
+		array &$postponed,
+		array &$messageUpdateJob
+	): void {
 		$groupId = $group->getId();
 		$subchanges = $sourceChanges->getModificationsForLanguage( $language );
 
@@ -719,20 +851,30 @@ class SpecialManageGroups extends SpecialPage {
 					continue;
 				}
 
-				$fuzzy = $selectedVal === 'fuzzy' ? 'fuzzy' : false;
+				$fuzzy = $selectedVal === 'fuzzy';
 				$messageUpdateJob[] = MessageUpdateJob::newJob( $title, $params['content'], $fuzzy );
 			}
 		}
 	}
 
-	protected function createRenameJobs( $jobParams ) {
+	/**
+	 * @param array $jobParams
+	 * @return MessageUpdateJob[][]
+	 */
+	private function createRenameJobs( array $jobParams ): array {
 		$jobs = [];
-		foreach ( $jobParams as $params ) {
-			$jobs[] = MessageUpdateJob::newRenameJob(
-				$params['targetTitle'], $params['target'],
-				$params['replacement'], $params['fuzzy'], $params['content'],
-				$params['others']
-			);
+		foreach ( $jobParams as $groupId => $groupJobParams ) {
+			$jobs[$groupId] = $jobs[$groupId] ?? [];
+			foreach ( $groupJobParams as $params ) {
+				$jobs[$groupId][] = MessageUpdateJob::newRenameJob(
+					$params['targetTitle'],
+					$params['target'],
+					$params['replacement'],
+					$params['fuzzy'],
+					$params['content'],
+					$params['others']
+				);
+			}
 		}
 
 		return $jobs;
@@ -740,13 +882,14 @@ class SpecialManageGroups extends SpecialPage {
 
 	/**
 	 * Checks if a title still exists and can be processed.
-	 *
 	 * @param Title $title
 	 * @param string $type
 	 * @return bool
 	 */
-	protected function isTitlePresent( Title $title, $type ) {
-		if ( ( $type === MessageSourceChange::DELETION || $type === MessageSourceChange::CHANGE ) &&
+	private function isTitlePresent( Title $title, string $type ): bool {
+		// phpcs:ignore SlevomatCodingStandard.ControlStructures.UselessIfConditionWithReturn
+		if (
+			( $type === MessageSourceChange::DELETION || $type === MessageSourceChange::CHANGE ) &&
 			!$title->exists()
 		) {
 			// This means that this change was probably introduced due to a rename
@@ -774,10 +917,15 @@ class SpecialManageGroups extends SpecialPage {
 	 *   1 => (bool) Was the current $id found?
 	 * ]
 	 */
-	protected function isRenameMissing(
-		WebRequest $req, MessageSourceChange $sourceChanges, $id, $key,
-		$language, $groupId, $isSourceLang
-	) {
+	private function isRenameMissing(
+		WebRequest $req,
+		MessageSourceChange $sourceChanges,
+		string $id,
+		string $key,
+		string $language,
+		string $groupId,
+		bool $isSourceLang
+	): array {
 		if ( $req->getCheck( $id ) ) {
 			return [ false, true ];
 		}
@@ -800,9 +948,7 @@ class SpecialManageGroups extends SpecialPage {
 		return [ true, $isCurrentKeyPresent ];
 	}
 
-	protected function getProcessingErrorMessage(
-		array $errorGroups, int $totalGroupCount
-	): string {
+	private function getProcessingErrorMessage( array $errorGroups, int $totalGroupCount ): string {
 		// Number of error groups, are less than the total groups processed.
 		if ( count( $errorGroups ) < $totalGroupCount ) {
 			$errorMsg = $this->msg( 'translate-smg-submitted-with-failure' )
@@ -834,5 +980,64 @@ class SpecialManageGroups extends SpecialPage {
 			$groups[$id] = MessageGroups::getGroup( $id );
 		}
 		return array_filter( $groups );
+	}
+
+	/**
+	 * Add jobs to the queue, updates the interim cache, and start sync process for the group.
+	 * @param MessageUpdateJob[][] $modificationJobs
+	 * @param MessageUpdateJob[][] $renameJobs
+	 * @return void
+	 */
+	private function startSync( array $modificationJobs, array $renameJobs ): void {
+		// We are adding an empty array for groups that have no jobs. This is mainly done to
+		// avoid adding unnecessary checks. Remove those using array_filter
+		$modificationGroupIds = array_keys( array_filter( $modificationJobs ) );
+		$renameGroupIds = array_keys( array_filter( $renameJobs ) );
+		$uniqueGroupIds = array_unique( array_merge( $modificationGroupIds, $renameGroupIds ) );
+		$messageIndexInstance = MessageIndex::singleton();
+		$jobQueueInstance = JobQueueGroup::singleton();
+
+		foreach ( $uniqueGroupIds as $groupId ) {
+			$messages = [];
+			$messageKeys = [];
+			$groupJobs = [];
+
+			$groupRenameJobs = $renameJobs[$groupId] ?? [];
+			/** @var MessageUpdateJob $job */
+			foreach ( $groupRenameJobs as $job ) {
+				$groupJobs[] = $job;
+				$messageUpdateParam = MessageUpdateParameter::createFromJob( $job );
+				$messages[] = $messageUpdateParam;
+
+				// Build the handle to add the message key in interim cache
+				$replacement = $messageUpdateParam->getReplacementValue();
+				$targetTitle = Title::makeTitle( $job->getTitle()->getNamespace(), $replacement );
+				$messageKeys[] = ( new MessageHandle( $targetTitle ) )->getKey();
+			}
+
+			$groupModificationJobs = $modificationJobs[$groupId] ?? [];
+			/** @var MessageUpdateJob $job */
+			foreach ( $groupModificationJobs as $job ) {
+				$groupJobs[] = $job;
+				$messageUpdateParam = MessageUpdateParameter::createFromJob( $job );
+				$messages[] = $messageUpdateParam;
+
+				$messageKeys[] = ( new MessageHandle( $job->getTitle() ) )->getKey();
+			}
+
+			// Store all message keys in the interim cache - we're particularly interested in new
+			// and renamed messages, but it's cleaner to just store everything.
+			$group = MessageGroups::getGroup( $groupId );
+			$messageIndexInstance->storeInterim( $group, $messageKeys );
+
+			if ( $this->getConfig()->get( 'TranslateGroupSynchronizationCache' ) ) {
+				$this->synchronizationCache->addMessages( $groupId, ...$messages );
+				$this->synchronizationCache->markGroupForSync( $groupId );
+			}
+
+			$jobQueueInstance->push( $groupJobs );
+		}
+
+		$jobQueueInstance->push( MessageIndexRebuildJob::newJob() );
 	}
 }

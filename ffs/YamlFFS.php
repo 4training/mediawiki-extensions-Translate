@@ -11,9 +11,7 @@ class YamlFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 	/** @var ArrayFlattener */
 	private $flattener;
 
-	/**
-	 * @param FileBasedMessageGroup $group
-	 */
+	/** @param FileBasedMessageGroup $group */
 	public function __construct( FileBasedMessageGroup $group ) {
 		parent::__construct( $group );
 		$this->flattener = $this->getFlattener();
@@ -64,9 +62,8 @@ class YamlFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 		$mangler = $this->group->getMangler();
 
 		$messages = [];
-		/**
-		 * @var $m TMessage
-		 */
+
+		/** @var TMessage $m */
 		foreach ( $collection as $key => $m ) {
 			$key = $mangler->unmangle( $key );
 			$value = $m->translation();

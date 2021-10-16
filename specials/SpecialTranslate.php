@@ -19,7 +19,6 @@ use MediaWiki\MediaWikiServices;
 class SpecialTranslate extends SpecialPage {
 	/** @var MessageGroup */
 	protected $group;
-
 	protected $defaults;
 	protected $nondefaults = [];
 	protected $options;
@@ -82,7 +81,7 @@ class SpecialTranslate extends SpecialPage {
 
 		$defaults = [
 			/* str  */'language' => $this->getLanguage()->getCode(),
-			/* str  */'group'    => '!additions',
+			/* str  */'group' => '!additions',
 		];
 
 		// Dump everything here
@@ -122,7 +121,9 @@ class SpecialTranslate extends SpecialPage {
 				throw new MWException( '$r was not set' );
 			}
 
-			wfAppendToArrayIfNotDefault( $v, $r, $defaults, $nondefaults );
+			if ( $defaults[$v] !== $r ) {
+				$nondefaults[$v] = $r;
+			}
 		}
 
 		$this->defaults = $defaults;
@@ -232,16 +233,17 @@ class SpecialTranslate extends SpecialPage {
 		$output .= Html::closeElement( 'ul' );
 		$output .= Html::closeElement( 'div' ); // close nine columns
 		$output .= Html::openElement( 'div', [ 'class' => 'three columns' ] );
-		$output .= Html::openElement( 'div', [ 'class' => 'tux-message-filter-wrapper' ] );
-		$output .= Html::element( 'input', [
-			'class' => 'tux-message-filter-box',
-			'type' => 'search',
-		] );
-		$output .= Html::closeElement( 'div' ); // close tux-message-filter-wrapper
+		$output .= Html::rawElement(
+			'div',
+			[ 'class' => 'tux-message-filter-wrapper' ],
+			Html::element( 'input', [
+				'class' => 'tux-message-filter-box',
+				'type' => 'search',
+			] )
+		);
 
-		$output .= Html::closeElement( 'div' ); // close three columns
-
-		$output .= Html::closeElement( 'div' ); // close the row
+		// close three columns and the row
+		$output .= Html::closeElement( 'div' ) . Html::closeElement( 'div' );
 
 		return $output;
 	}
@@ -353,7 +355,7 @@ class SpecialTranslate extends SpecialPage {
 		list( $alias, $sub ) = MediaWikiServices::getInstance()
 			->getSpecialPageFactory()->resolveAlias( $title->getText() );
 
-		$pagesInGroup = [ 'Translate', 'LanguageStats', 'MessageGroupStats' ];
+		$pagesInGroup = [ 'Translate', 'LanguageStats', 'MessageGroupStats', 'ExportTranslations' ];
 		if ( !in_array( $alias, $pagesInGroup, true ) ) {
 			return true;
 		}

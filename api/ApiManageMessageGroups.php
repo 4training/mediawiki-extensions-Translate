@@ -6,8 +6,8 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
-use MediaWiki\Extensions\Translate\Utilities\StringComparators\SimpleStringComparator;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Utilities\StringComparators\SimpleStringComparator;
 
 /**
  * API module for managing message group changes.
@@ -139,11 +139,11 @@ class ApiManageMessageGroups extends ApiBase {
 			// language key is renamed, but one of the non source language keys is removed,
 			// renaming it will not remove the translation, but only rename it. This
 			// scenario is highly unlikely though.
-			$msg = $msg === null ? $sourceChanges->findMessage( $code, $renameKey, [
+			$msg = $msg ?? $sourceChanges->findMessage( $code, $renameKey, [
 				MessageSourceChange::DELETION,
 				MessageSourceChange::CHANGE,
 				MessageSourceChange::RENAME
-			], $msgState ) : $msg;
+			], $msgState );
 
 			if ( $msg === null ) {
 				continue;
@@ -289,7 +289,7 @@ class ApiManageMessageGroups extends ApiBase {
 		}
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		return [
 			'groupId' => [
 				ApiBase::PARAM_TYPE => 'string',

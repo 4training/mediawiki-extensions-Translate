@@ -8,7 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\Jobs\GenericTranslateJob;
+use MediaWiki\Extension\Translate\Jobs\GenericTranslateJob;
 
 /**
  * Job for rebuilding message index.
@@ -16,9 +16,7 @@ use MediaWiki\Extensions\Translate\Jobs\GenericTranslateJob;
  * @ingroup JobQueue
  */
 class MessageIndexRebuildJob extends GenericTranslateJob {
-	/**
-	 * @return self
-	 */
+	/** @return self */
 	public static function newJob() {
 		$timestamp = microtime( true );
 		$job = new self( Title::newMainPage(), [ 'timestamp' => $timestamp ] );

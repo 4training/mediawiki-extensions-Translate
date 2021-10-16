@@ -10,7 +10,7 @@
  */
 
 // Standard boilerplate to define $IP
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\SlotRecord;
 use Wikimedia\Rdbms\IResultWrapper;
@@ -97,35 +97,20 @@ class Fuzzy extends Maintenance {
  * Class for marking translation fuzzy.
  */
 class FuzzyScript {
-	/**
-	 * @var bool Check for configuration problems.
-	 */
-	private $allclear = false;
-
+	/** @var bool Check for configuration problems. */
+	private $allclear = true;
 	/** @var callable Function to report progress updates */
 	protected $progressCallback;
-
-	/**
-	 * @var bool Dont do anything unless confirmation is given
-	 */
+	/** @var bool Dont do anything unless confirmation is given */
 	public $dryrun = true;
-
-	/**
-	 * @var string Edit summary.
-	 */
+	/** @var string Edit summary. */
 	public $comment;
-
-	/**
-	 * @var array[]
-	 */
+	/** @var array[] */
 	public $pages;
 
-	/**
-	 * @param array $pages
-	 */
+	/** @param array $pages */
 	public function __construct( $pages ) {
 		$this->pages = $pages;
-		$this->allclear = true;
 	}
 
 	public function setProgressCallback( $callback ) {

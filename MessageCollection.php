@@ -8,7 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\SlotRecord;
@@ -16,7 +16,7 @@ use MediaWiki\Revision\SlotRecord;
 /**
  * Core message collection class.
  *
- * Message group is collection of messages of one message group in one
+ * Message collection is collection of messages of one message group in one
  * language. It handles loading of the messages in one huge batch, and also
  * stores information that can be used to filter the collection in different
  * ways.
@@ -30,66 +30,41 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 	 */
 	private const MAX_ITEMS_PER_QUERY = 2000;
 
-	/**
-	 * @var string Language code.
-	 */
+	/** @var string Language code. */
 	public $code;
-
-	/**
-	 * @var MessageDefinitions
-	 */
-	protected $definitions = null;
-
-	/**
-	 * @var array array( %Message key => translation, ... )
-	 */
-	protected $infile = [];
-
+	/** @var MessageDefinitions */
+	private $definitions = null;
+	/** @var array array( %Message key => translation, ... ) */
+	private $infile = [];
 	// Keys and messages.
 
-	/**
-	 * @var array array( %Message display key => database key, ... )
-	 */
+	/** @var array array( %Message display key => database key, ... ) */
 	protected $keys = [];
-
-	/**
-	 * @var array array( %Message String => TMessage, ... )
-	 */
+	/** @var array array( %Message String => TMessage, ... ) */
 	protected $messages = [];
-
-	/**
-	 * @var array
-	 */
-	protected $reverseMap;
-
+	/** @var array */
+	private $reverseMap;
 	// Database resources
 
 	/** @var ?Traversable Stored message existence and fuzzy state. */
-	protected $dbInfo;
-
+	private $dbInfo;
 	/** @var ?Traversable Stored translations in database. */
-	protected $dbData;
-
+	private $dbData;
 	/** @var ?Traversable Stored reviews in database. */
-	protected $dbReviewData;
-
+	private $dbReviewData;
 	/**
 	 * Tags, copied to thin messages
 	 * tagtype => keys
 	 * @var array[]
 	 */
 	protected $tags = [];
-
 	/**
 	 * Properties, copied to thin messages
 	 * @var array[]
 	 */
-	protected $properties = [];
-
-	/**
-	 * @var string[] Authors.
-	 */
-	protected $authors = [];
+	private $properties = [];
+	/** @var string[] Authors. */
+	private $authors = [];
 
 	/**
 	 * Constructors. Use newFromDefinitions() instead.
@@ -113,9 +88,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		return $collection;
 	}
 
-	/**
-	 * @return string
-	 */
+	/** @return string */
 	public function getLanguage() {
 		return $this->code;
 	}
@@ -188,9 +161,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 
 		foreach ( $this->messages as $m ) {
 			// Check if there are authors
-			/**
-			 * @var TMessage $m
-			 */
+			/** @var TMessage $m */
 			$author = $m->getProperty( 'last-translator-text' );
 
 			if ( $author === null ) {
@@ -290,15 +261,9 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 
 		// Handle string offsets
 		if ( !ctype_digit( (string)$offset ) ) {
-			$count = 0;
-			foreach ( array_keys( $this->keys ) as $index ) {
-				if ( $index === $offset ) {
-					break;
-				}
-				$count++;
-			}
+			$pos = array_search( $offset, array_keys( $this->keys ), true );
 			// Now offset is always an integer, suitable for array_slice
-			$offset = $count;
+			$offset = $pos !== false ? $pos : count( $this->keys );
 		}
 
 		// False means that cannot go back or forward
@@ -364,9 +329,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$this->applyFilter( $type, $condition, $value );
 	}
 
-	/**
-	 * @return array
-	 */
+	/** @return array */
 	public static function getAvailableFilters() {
 		return [
 			'fuzzy',
@@ -422,18 +385,31 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$this->keys = $keys;
 	}
 
+	/** @internal For MessageGroupStats */
+	public function filterUntranslatedOptional(): void {
+		$optionalKeys = array_flip( $this->tags['optional'] ?? [] );
+		// Convert plain message keys to array<string,TitleValue>
+		$optional = $this->filterOnCondition( $this->keys, $optionalKeys, false );
+		// Then get reduce that list to those which have no translation. Ensure we don't
+		// accidentally populate the info cache with too few keys.
+		$this->loadInfo( $this->keys );
+		$untranslatedOptional = $this->filterHastranslation( $optional, true );
+		// Now remove that list from the full list
+		$this->keys = $this->filterOnCondition( $this->keys, $untranslatedOptional );
+	}
+
 	/**
 	 * Filters list of keys with other list of keys according to the condition.
 	 * In other words, you have a list of keys, and you have determined list of
 	 * keys that have some feature. Now you can either take messages that are
 	 * both in the first list and the second list OR are in the first list but
-	 * are not in the second list (conditition = true and false respectively).
+	 * are not in the second list (conditition = false and true respectively).
 	 * What makes this more complex is that second list of keys might not be a
 	 * subset of the first list of keys.
 	 * @param string[] $keys List of keys to filter.
 	 * @param string[] $condKeys Second list of keys for filtering.
 	 * @param bool $condition True (default) to return keys which are on first
-	 * and second list, false to return keys which are on the first but not on
+	 * but not on the second list, false to return keys which are on both.
 	 * second.
 	 * @return string[] Filtered keys.
 	 */
@@ -532,46 +508,30 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		}
 
 		$revStore = MediaWikiServices::getInstance()->getRevisionStore();
-		if ( is_callable( [ $revStore, 'newRevisionsFromBatch' ] ) ) {
-			$infileRows = [];
-			foreach ( $this->dbData as $row ) {
-				$mkey = $this->rowToKey( $row );
-				if ( isset( $this->infile[$mkey] ) ) {
-					$infileRows[] = $row;
-				}
+		$infileRows = [];
+		foreach ( $this->dbData as $row ) {
+			$mkey = $this->rowToKey( $row );
+			if ( isset( $this->infile[$mkey] ) ) {
+				$infileRows[] = $row;
 			}
+		}
 
-			$revisions = $revStore->newRevisionsFromBatch( $infileRows, [
-				'slots' => [ SlotRecord::MAIN ],
-				'content' => true
-			] )->getValue();
-			foreach ( $infileRows as $row ) {
-				/** @var RevisionRecord|null $rev */
-				$rev = $revisions[$row->rev_id];
-				if ( $rev ) {
-					/** @var TextContent $content */
-					$content = $rev->getContent( SlotRecord::MAIN );
-					if ( $content ) {
-						$mkey = $this->rowToKey( $row );
-						if ( $this->infile[$mkey] === $content->getText() ) {
-							// Remove unchanged messages from the list
-							unset( $keys[$mkey] );
-						}
+		$revisions = $revStore->newRevisionsFromBatch( $infileRows, [
+			'slots' => [ SlotRecord::MAIN ],
+			'content' => true
+		] )->getValue();
+		foreach ( $infileRows as $row ) {
+			/** @var RevisionRecord|null $rev */
+			$rev = $revisions[$row->rev_id];
+			if ( $rev ) {
+				/** @var TextContent $content */
+				$content = $rev->getContent( SlotRecord::MAIN );
+				if ( $content ) {
+					$mkey = $this->rowToKey( $row );
+					if ( $this->infile[$mkey] === $content->getText() ) {
+						// Remove unchanged messages from the list
+						unset( $keys[$mkey] );
 					}
-				}
-			}
-		} else {
-			// Pre 1.34 compatibility
-			foreach ( $this->dbData as $row ) {
-				$mkey = $this->rowToKey( $row );
-				if ( !isset( $this->infile[$mkey] ) ) {
-					continue;
-				}
-
-				$text = Revision::getRevisionText( $row );
-				if ( $this->infile[$mkey] === $text ) {
-					// Remove unchanged messages from the list
-					unset( $keys[$mkey] );
 				}
 			}
 		}
@@ -750,12 +710,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 
 		$dbr = TranslateUtils::getSafeReadDB();
 		$revisionStore = MediaWikiServices::getInstance()->getRevisionStore();
-		if ( is_callable( [ $revisionStore, 'newRevisionsFromBatch' ] ) ) {
-			$revQuery = $revisionStore->getQueryInfo( [ 'page' ] );
-		} else {
-			// Pre MW 1.34 compatibility
-			$revQuery = $revisionStore->getQueryInfo( [ 'page', 'text' ] );
-		}
+		$revQuery = $revisionStore->getQueryInfo( [ 'page' ] );
 		$tables = $revQuery['tables'];
 		$fields = $revQuery['fields'];
 		$joins = $revQuery['joins'];
@@ -841,9 +796,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		}
 
 		$map = [];
-		/**
-		 * @var TitleValue $title
-		 */
+		/** @var TitleValue $title */
 		foreach ( $this->keys as $mkey => $title ) {
 			$map[$title->getNamespace()][$title->getDBkey()] = $mkey;
 		}
@@ -865,44 +818,26 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$definitions = $this->definitions->getDefinitions();
 		$revStore = MediaWikiServices::getInstance()->getRevisionStore();
 		$queryFlags = TranslateUtils::shouldReadFromMaster() ? $revStore::READ_LATEST : 0;
-		if ( is_callable( [ $revStore, 'getContentBlobsForBatch' ] ) ) {
-			foreach ( array_keys( $this->keys ) as $mkey ) {
-				$messages[$mkey] = new ThinMessage( $mkey, $definitions[$mkey] );
-			}
-			if ( $this->dbData !== null ) {
-				$slotRows = $revStore->getContentBlobsForBatch(
-					$this->dbData, [ SlotRecord::MAIN ], $queryFlags
-				)->getValue();
+		foreach ( array_keys( $this->keys ) as $mkey ) {
+			$messages[$mkey] = new ThinMessage( $mkey, $definitions[$mkey] );
+		}
 
-				foreach ( $this->dbData as $row ) {
-					$mkey = $this->rowToKey( $row );
-					if ( !isset( $messages[$mkey] ) ) {
-						continue;
-					}
-					$messages[$mkey]->setRow( $row );
-					$messages[$mkey]->setProperty( 'revision', $row->page_latest );
+		if ( $this->dbData !== null ) {
+			$slotRows = $revStore->getContentBlobsForBatch(
+				$this->dbData, [ SlotRecord::MAIN ], $queryFlags
+			)->getValue();
 
-					if ( isset( $slotRows[$row->rev_id][SlotRecord::MAIN] ) ) {
-						$slot = $slotRows[$row->rev_id][SlotRecord::MAIN];
-						$messages[$mkey]->setTranslation( $slot->blob_data );
-					}
+			foreach ( $this->dbData as $row ) {
+				$mkey = $this->rowToKey( $row );
+				if ( !isset( $messages[$mkey] ) ) {
+					continue;
 				}
-			}
-		} else {
-			// Pre MW 1.34 compatibility
-			foreach ( array_keys( $this->keys ) as $mkey ) {
-				$messages[$mkey] = new ThinMessage( $mkey, $definitions[$mkey] );
-			}
+				$messages[$mkey]->setRow( $row );
+				$messages[$mkey]->setProperty( 'revision', $row->page_latest );
 
-			// Copy rows if any.
-			if ( $this->dbData !== null ) {
-				foreach ( $this->dbData as $row ) {
-					$mkey = $this->rowToKey( $row );
-					if ( !isset( $messages[$mkey] ) ) {
-						continue;
-					}
-					$messages[$mkey]->setRow( $row );
-					$messages[$mkey]->setProperty( 'revision', $row->page_latest );
+				if ( isset( $slotRows[$row->rev_id][SlotRecord::MAIN] ) ) {
+					$slot = $slotRows[$row->rev_id][SlotRecord::MAIN];
+					$messages[$mkey]->setTranslation( $slot->blob_data );
 				}
 			}
 		}
@@ -992,9 +927,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$this->messages[$offset] = $value;
 	}
 
-	/**
-	 * @param mixed $offset
-	 */
+	/** @param mixed $offset */
 	public function offsetUnset( $offset ) {
 		unset( $this->keys[$offset] );
 	}
@@ -1057,9 +990,12 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
  * API totally changed in 2011-12-28
  */
 class MessageDefinitions {
-	protected $namespace;
-	protected $messages;
-	protected $pages;
+	/** @var int|false */
+	private $namespace;
+	/** @var string[] */
+	private $messages;
+	/** @var Title[] */
+	private $pages;
 
 	public function __construct( array $messages, $namespace = false ) {
 		$this->namespace = $namespace;
@@ -1070,9 +1006,7 @@ class MessageDefinitions {
 		return $this->messages;
 	}
 
-	/**
-	 * @return Title[] List of title indexed by message key.
-	 */
+	/** @return Title[] List of title indexed by message key. */
 	public function getPages() {
 		$namespace = $this->namespace;
 		if ( $this->pages !== null ) {

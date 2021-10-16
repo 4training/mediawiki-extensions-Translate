@@ -8,6 +8,9 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\CombinedInsertablesSuggester;
+use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\InsertableFactory;
+use MediaWiki\Extension\Translate\Validation\ValidationRunner;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -22,10 +25,7 @@ use MediaWiki\MediaWikiServices;
 abstract class MessageGroupBase implements MessageGroup {
 	protected $conf;
 	protected $namespace;
-
-	/**
-	 * @var StringMatcher
-	 */
+	/** @var StringMatcher */
 	protected $mangler;
 
 	protected function __construct() {
@@ -115,10 +115,19 @@ abstract class MessageGroupBase implements MessageGroup {
 			return null;
 		}
 
-		$msgValidator = new MessageValidator( $this->getId() );
+		$msgValidator = new ValidationRunner( $this->getId() );
 
 		foreach ( $validatorConfigs as $config ) {
-			$msgValidator->addValidator( $config );
+			try {
+				$msgValidator->addValidator( $config );
+			} catch ( Exception $e ) {
+				$id = $this->getId();
+				throw new InvalidArgumentException(
+					"Unable to construct validator for message group $id: " . $e->getMessage(),
+					0,
+					$e
+				);
+			}
 		}
 
 		return $msgValidator;
@@ -138,9 +147,7 @@ abstract class MessageGroupBase implements MessageGroup {
 				throw new MWException( "Mangler class $class does not exist." );
 			}
 
-			/**
-			 * @todo Branch handling, merge with upper branch keys
-			 */
+			/** @todo Branch handling, merge with upper branch keys */
 			$this->mangler = new $class();
 			$this->mangler->setConf( $this->conf['MANGLER'] );
 		}
@@ -154,35 +161,28 @@ abstract class MessageGroupBase implements MessageGroup {
 	 * @return CombinedInsertablesSuggester
 	 */
 	public function getInsertablesSuggester() {
-		$allClasses = [];
-
-		$class = $this->getFromConf( 'INSERTABLES', 'class' );
-		if ( $class !== null ) {
-			$allClasses[] = $class;
-		}
-
-		$classes = $this->getFromConf( 'INSERTABLES', 'classes' );
-		if ( $classes !== null ) {
-			$allClasses = array_merge( $allClasses, $classes );
-		}
-
-		$allClasses = array_unique( $allClasses, SORT_REGULAR );
-
 		$suggesters = [];
+		$insertableConf = $this->getFromConf( 'INSERTABLES' ) ?? [];
 
-		foreach ( $allClasses as $class ) {
-			if ( !class_exists( $class ) ) {
-				throw new InvalidArgumentException( "InsertablesSuggester class $class does not exist." );
+		foreach ( $insertableConf as $config ) {
+			if ( !isset( $config['class'] ) ) {
+				throw new InvalidArgumentException(
+					'Insertable configuration for group: ' . $this->getId() .
+					' does not provide a class.'
+				);
 			}
 
-			$suggesters[] = new $class();
+			if ( !is_string( $config['class'] ) ) {
+				throw new InvalidArgumentException(
+					'Expected Insertable class to be string, got: ' . gettype( $config['class'] ) .
+					' for group: ' . $this->getId()
+				);
+			}
+
+			$suggesters[] = InsertableFactory::make( $config['class'], $config['params'] ?? [] );
 		}
 
-		if ( $suggesters === [] ) {
-			$suggesters = $this->getArrayInsertables();
-		}
-
-		// get validators marked as insertable
+		// Get validators marked as insertable
 		$messageValidator = $this->getValidator();
 		if ( $messageValidator ) {
 			$suggesters = array_merge( $suggesters, $messageValidator->getInsertableValidators() );
@@ -191,9 +191,7 @@ abstract class MessageGroupBase implements MessageGroup {
 		return new CombinedInsertablesSuggester( $suggesters );
 	}
 
-	/**
-	 * @inheritDoc
-	 */
+	/** @inheritDoc */
 	public function getKeys() {
 		return array_keys( $this->getDefinitions() );
 	}
@@ -237,7 +235,7 @@ abstract class MessageGroupBase implements MessageGroup {
 			 * Use mangler to find messages that match.
 			 */
 			foreach ( $messageKeys as $key ) {
-				if ( $mangler->match( $key ) ) {
+				if ( $mangler->matches( $key ) ) {
 					$matches[] = $key;
 				}
 			}
@@ -290,9 +288,7 @@ abstract class MessageGroupBase implements MessageGroup {
 		return $code === $this->getSourceLanguage();
 	}
 
-	/**
-	 * @deprecated Use getMessageGroupStates
-	 */
+	/** @deprecated Use getMessageGroupStates */
 	public function getWorkflowConfiguration() {
 		global $wgTranslateWorkflowStates;
 		if ( !$wgTranslateWorkflowStates ) {
@@ -385,31 +381,5 @@ abstract class MessageGroupBase implements MessageGroup {
 	 */
 	public function getTranslationAids() {
 		return TranslationAid::getTypes();
-	}
-
-	/**
-	 * Fetches insertables that have been added in the array configuration format.
-	 * TODO: MessageValidator - Move this code to getInsertablesSuggester once all
-	 * insertables in group config file have been migrated to the array structure.
-	 * @return array
-	 */
-	private function getArrayInsertables() {
-		$suggesters = [];
-		$insertableConf = $this->getFromConf( 'INSERTABLES' );
-
-		if ( $insertableConf === null ) {
-			return $suggesters;
-		}
-
-		foreach ( $insertableConf as $config ) {
-			if ( !isset( $config['class'] ) ) {
-				throw new InvalidArgumentException( "Insertable configuration does not provide a class." );
-			}
-
-			$class = $config['class'];
-			$suggesters[] = new $class( $config['params'] ?? [] );
-		}
-
-		return $suggesters;
 	}
 }

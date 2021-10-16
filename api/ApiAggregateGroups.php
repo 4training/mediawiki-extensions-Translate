@@ -8,6 +8,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Logger\LoggerFactory;
+
 /**
  * API module for managing aggregate message groups
  * Only supports aggregate message groups defined inside the wiki.
@@ -34,12 +36,12 @@ class ApiAggregateGroups extends ApiBase {
 			}
 			$aggregateGroup = $params['aggregategroup'];
 			$subgroups = TranslateMetadata::getSubgroups( $aggregateGroup );
-			if ( !$subgroups ) {
-				// For newly created groups the subgroups value might be empty,
-				// but check that.
-				if ( TranslateMetadata::get( $aggregateGroup, 'name' ) === false ) {
-					$this->dieWithError( 'apierror-translate-invalidaggregategroup', 'invalidaggregategroup' );
-				}
+			if ( $subgroups === null ) {
+				// For a newly created aggregate group, it may contain no subgroups, but null
+				// means the group does not exist or something has gone wrong.
+
+				$this->dieWithError( 'apierror-translate-invalidaggregategroup', 'invalidaggregategroup' );
+				// For static analysers
 				$subgroups = [];
 			}
 
@@ -89,9 +91,21 @@ class ApiAggregateGroups extends ApiBase {
 			if ( !isset( $params['aggregategroup'] ) ) {
 				$this->dieWithError( [ 'apierror-missingparam', 'aggregategroup' ] );
 			}
-			TranslateMetadata::deleteGroup( $params['aggregategroup'] );
-			// @todo Logging
 
+			$aggregateGroupId = $params['aggregategroup'];
+			$group = MessageGroups::getGroup( $aggregateGroupId );
+			if ( !$group || !( $group instanceof AggregateMessageGroup ) ) {
+				$this->dieWithError(
+					'apierror-translate-invalidaggregategroupname', 'invalidaggregategroupname'
+				);
+			}
+
+			TranslateMetadata::deleteGroup( $params['aggregategroup'] );
+			$logger = LoggerFactory::getInstance( 'Translate' );
+			$logger->info(
+				'Aggregate group {groupId} has been deleted.',
+				[ 'groupId' => $aggregateGroupId ]
+			);
 		} elseif ( $action === 'add' ) {
 			if ( !isset( $params['groupname'] ) ) {
 				$this->dieWithError( [ 'apierror-missingparam', 'groupname' ] );
@@ -191,7 +205,7 @@ class ApiAggregateGroups extends ApiBase {
 		return 'csrf';
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		return [
 			'do' => [
 				ApiBase::PARAM_TYPE => [ 'associate', 'dissociate', 'remove', 'add', 'update' ],

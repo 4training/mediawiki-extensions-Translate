@@ -17,12 +17,15 @@ class ApiTranslationCheck extends ApiBase {
 
 		$validationResult = $this->validateTranslation( $handle, $translation );
 
+		$validationOutput = [ 'errors' => [], 'warnings' => [] ];
 		if ( $validationResult ) {
-			$this->getResult()->addValue( null, 'validation', [
-				'errors' => $validationResult->getDescriptiveErrors( $this->getContext() ),
-				'warnings' => $validationResult->getDescriptiveWarnings( $this->getContext() ),
-			] );
+			$validationOutput['errors'] =
+				$validationResult->getDescriptiveErrors( $this->getContext() );
+			$validationOutput['warnings'] =
+				$validationResult->getDescriptiveWarnings( $this->getContext() );
 		}
+
+		$this->getResult()->addValue( null, 'validation', $validationOutput );
 	}
 
 	private function validateTranslation( MessageHandle $handle, $translation ) {
@@ -54,7 +57,7 @@ class ApiTranslationCheck extends ApiBase {
 		}
 	}
 
-	public function getAllowedParams() {
+	protected function getAllowedParams() {
 		return [
 			'title' => [
 				ApiBase::PARAM_TYPE => 'string',

@@ -7,6 +7,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashStorage;
+
 /**
  * @since 2013.06
  * @ingroup MessageGroup
@@ -17,7 +19,6 @@ class SandboxMessageGroup extends WikiMessageGroup {
 	 * @see MessageCollection::getPages()
 	 */
 	protected $namespace = false;
-
 	protected $language;
 
 	/**
@@ -86,7 +87,7 @@ class SandboxMessageGroup extends WikiMessageGroup {
 		$messagesToProvide = $wgTranslateSandboxLimit * 2;
 
 		foreach ( $list as $index => &$translation ) {
-			list( $ns, $page ) = explode( ':', $index, 2 );
+			[ $ns, $page ] = explode( ':', $index, 2 );
 			$title = Title::makeTitle( $ns, "$page/{$this->language}" );
 			$handle = new MessageHandle( $title );
 

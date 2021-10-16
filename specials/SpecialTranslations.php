@@ -18,7 +18,8 @@ use MediaWiki\MediaWikiServices;
  */
 class SpecialTranslations extends SpecialAllPages {
 	public function __construct() {
-		parent::__construct( 'Translations' );
+		parent::__construct();
+		$this->mName = 'Translations';
 	}
 
 	protected function getGroupName() {
@@ -39,7 +40,7 @@ class SpecialTranslations extends SpecialAllPages {
 		$this->outputHeader();
 
 		$out = $this->getOutput();
-		$out->addModuleStyles( 'ext.translate.legacy' );
+		$out->addModuleStyles( 'ext.translate.specialpages.styles' );
 
 		$par = (string)$par;
 
@@ -115,8 +116,7 @@ class SpecialTranslations extends SpecialAllPages {
 		$context = new DerivativeContext( $this->getContext() );
 		$context->setTitle( $this->getPageTitle() ); // Remove subpage
 
-		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $context );
-		$htmlForm
+		HTMLForm::factory( 'ooui', $formDescriptor, $context )
 			->setMethod( 'get' )
 			->setSubmitTextMsg( 'allpagessubmit' )
 			->setWrapperLegendMsg( 'translate-translations-fieldset-title' )
@@ -197,7 +197,7 @@ class SpecialTranslations extends SpecialAllPages {
 		$pageInfo = TranslateUtils::getContents( $titles, $namespace );
 
 		$tableheader = Xml::openElement( 'table', [
-			'class' => 'mw-sp-translate-table sortable'
+			'class' => 'mw-sp-translate-table sortable wikitable'
 		] );
 
 		$tableheader .= Xml::openElement( 'tr' );
@@ -239,10 +239,9 @@ class SpecialTranslations extends SpecialAllPages {
 				[ 'action' => 'history' ]
 			);
 
+			$class = '';
 			if ( MessageHandle::hasFuzzyString( $pageInfo[$key][0] ) || $tHandle->isFuzzy() ) {
-				$class = 'orig';
-			} else {
-				$class = 'def';
+				$class = 'mw-sp-translate-fuzzy';
 			}
 
 			$languageAttributes = [];

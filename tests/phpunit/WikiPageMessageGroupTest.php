@@ -5,11 +5,11 @@
  * @file
  */
 
- /**
-  * @group medium
-  */
+use MediaWiki\Extension\Translate\Validation\ValidationRunner;
+
+/** @group medium */
 class WikiPageMessageGroupTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setTemporaryHook(
@@ -36,7 +36,7 @@ class WikiPageMessageGroupTest extends MediaWikiIntegrationTestCase {
 		$group = MessageGroups::getGroup( 'anotherpageid' );
 		$msgValidator = $group->getValidator();
 
-		$this->assertInstanceOf( MessageValidator::class, $msgValidator,
-			'returns a valid object of MessageValidator class.' );
+		$this->assertInstanceOf( ValidationRunner::class, $msgValidator,
+			'returns a valid object of ValidationRunner class.' );
 	}
 }

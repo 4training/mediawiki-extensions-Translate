@@ -1,6 +1,5 @@
 <?php
 /**
- *
  * @file
  * @author Niklas Laxström
  * @license GPL-2.0-or-later
@@ -8,11 +7,9 @@
 
 use MediaWiki\MediaWikiServices;
 
-/**
- * @group Database
- */
+/** @group Database */
 class ApiTranslationReviewTest extends MediaWikiIntegrationTestCase {
-	protected function setUp() : void {
+	protected function setUp(): void {
 		parent::setUp();
 
 		$this->setMwGlobals( [

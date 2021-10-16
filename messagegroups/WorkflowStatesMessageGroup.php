@@ -9,11 +9,9 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 
-/**
- * @ingroup MessageGroup
- */
+/** @ingroup MessageGroup */
 class WorkflowStatesMessageGroup extends WikiMessageGroup {
 	// id and source are not needed
 	public function __construct() {
@@ -41,9 +39,7 @@ class WorkflowStatesMessageGroup extends WikiMessageGroup {
 		$groups = MessageGroups::getAllGroups();
 		$keys = [];
 
-		/**
-		 * @var $g MessageGroup
-		 */
+		/** @var $g MessageGroup */
 		foreach ( $groups as $g ) {
 			$states = $g->getMessageGroupStates()->getStates();
 			foreach ( array_keys( $states ) as $state ) {

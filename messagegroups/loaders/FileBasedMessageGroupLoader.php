@@ -18,17 +18,14 @@ class FileBasedMessageGroupLoader extends MessageGroupLoader
 	implements CachedMessageGroupLoader {
 
 	private const CACHE_KEY = 'filebased';
-	private const CACHE_VERSION = 1;
+	private const CACHE_VERSION = 2;
 
 	/**
 	 * List of groups
 	 * @var array|null
 	 */
 	protected $groups;
-
-	/**
-	 * @var MessageGroupWANCache
-	 */
+	/** @var MessageGroupWANCache */
 	protected $cache;
 
 	public function __construct( MessageGroupWANCache $cache ) {

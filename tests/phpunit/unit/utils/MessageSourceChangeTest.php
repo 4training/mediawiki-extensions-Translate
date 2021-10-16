@@ -4,15 +4,11 @@
  * @license GPL-2.0-or-later
  */
 
-use MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
 
-/**
- * @covers MediaWiki\Extensions\Translate\MessageSync\MessageSourceChange
- */
+/** @covers MediaWiki\Extension\Translate\MessageSync\MessageSourceChange */
 class MessageSourceChangeTest extends MediaWikiUnitTestCase {
-	/**
-	 * @var MessageSourceChange
-	 */
+	/** @var MessageSourceChange */
 	protected $change;
 
 	/**
@@ -136,7 +132,7 @@ class MessageSourceChangeTest extends MediaWikiUnitTestCase {
 			'en-gb', 'renameDeleted', [ MessageSourceChange::CHANGE ]
 		);
 		$this->assertNull(
-			$changed,  'findMessage returns null when searching changes for renamed message.'
+			$changed, 'findMessage returns null when searching changes for renamed message.'
 		);
 
 		$this->change->breakRename( 'en-gb', 'renameAdded' );
