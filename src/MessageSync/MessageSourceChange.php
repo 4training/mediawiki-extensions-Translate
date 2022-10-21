@@ -32,7 +32,7 @@ class MessageSourceChange {
 	private const SIMILARITY_THRESHOLD = 0.9;
 
 	/**
-	 * Contains a mapping of mesasge type, and the corresponding addition function
+	 * Contains a mapping of message type, and the corresponding addition function
 	 * @var callable[]
 	 */
 	protected $addFunctionMap;
@@ -218,7 +218,7 @@ class MessageSourceChange {
 	}
 
 	/**
-	 * Break reanmes, and put messages back into their previous state.
+	 * Break renames, and put messages back into their previous state.
 	 * @param string $languageCode
 	 * @param string $msgKey
 	 * @return string|null previous state of the message
@@ -331,7 +331,7 @@ class MessageSourceChange {
 	 * statement.
 	 * @param string $language
 	 * @param array $keysToRemove
-	 * @param string $type - One of ADDITION, CHANGE, DELETION
+	 * @param string $type One of ADDITION, CHANGE, DELETION
 	 */
 	public function removeBasedOnType( $language, $keysToRemove, $type ) {
 		$callable = $this->removeFunctionMap[ $type ] ?? null;
@@ -373,7 +373,7 @@ class MessageSourceChange {
 		} else {
 			$this->changes[$language][$type] = array_filter(
 				$this->changes[$language][$type],
-				function ( $change ) use ( $keysToRemove ) {
+				static function ( $change ) use ( $keysToRemove ) {
 					return !in_array( $change['key'], $keysToRemove, true );
 				}
 			);
@@ -551,5 +551,3 @@ class MessageSourceChange {
 		return $similarity === 1;
 	}
 }
-
-class_alias( MessageSourceChange::class, '\MediaWiki\Extensions\Translate\MessageSourceChange' );

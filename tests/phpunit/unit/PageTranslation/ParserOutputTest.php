@@ -52,7 +52,7 @@ class ParserOutputTest extends MediaWikiUnitTestCase {
 
 	public function testUnits() {
 		$units = [];
-		$units['<1>'] = new TranslationUnit();
+		$units['<1>'] = new TranslationUnit( '' );
 
 		$output = new ParserOutput(
 			'A<0>B',
@@ -65,8 +65,7 @@ class ParserOutputTest extends MediaWikiUnitTestCase {
 
 	public function testSourcePageTextForRendering() {
 		$units = [];
-		$units['<1>'] = new TranslationUnit();
-		$units['<1>']->text = 'Hello';
+		$units['<1>'] = new TranslationUnit( 'Hello' );
 
 		$output = new ParserOutput(
 			'A<0>B',
@@ -75,16 +74,17 @@ class ParserOutputTest extends MediaWikiUnitTestCase {
 		);
 
 		$language = $this->createStub( Language::class );
-		$language->method( 'getHtmlCode' )->willReturn( 'en-GB' );
+		$language->method( 'getHtmlCode' )
+			->willReturn( 'en-GB' );
+		$language->method( 'getCode' )
+			->willReturn( 'en-GB' );
 
 		$this->assertSame( 'AHelloB', $output->sourcePageTextForRendering( $language ) );
 	}
 
 	public function testSourcePageTextForSaving() {
 		$units = [];
-		$units['<1>'] = new TranslationUnit();
-		$units['<1>']->text = 'Hello';
-		$units['<1>']->id = 'abc';
+		$units['<1>'] = new TranslationUnit( 'Hello', 'abc' );
 		$units['<1>']->setIsInline( true );
 
 		$output = new ParserOutput(

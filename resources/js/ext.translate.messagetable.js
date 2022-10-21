@@ -61,22 +61,18 @@
 				$filterInput = this.$container.parent().find( '.tux-message-filter-box' );
 
 			// Vector has transitions of 250ms which affect layout. Let those finish.
-			$( window ).on( 'scroll', $.debounce( 250, function () {
+			$( window ).on( 'scroll', mw.util.debounce( 250, function () {
 				messageTable.scroll();
 
 				if ( isLoaderVisible( messageTable.$loader ) ) {
 					messageTable.load();
 				}
-			} ) ).on( 'resize', $.throttle( 250, function () {
+			} ) ).on( 'resize', this.throttle( function () {
 				messageTable.resize();
 				messageTable.scroll();
-			} ) );
+			}, 250 ) );
 
-			if ( mw.translate.isPlaceholderSupported( $filterInput ) ) {
-				$filterInput.prop( 'placeholder', mw.msg( 'tux-message-filter-placeholder' ) );
-			}
-
-			$filterInput.on( 'textchange', $.debounce( 250, function () {
+			$filterInput.on( 'input', mw.util.debounce( 250, function () {
 				messageTable.search( $filterInput.val() );
 			} ) );
 
@@ -142,9 +138,7 @@
 		 * @param {Object} message
 		 */
 		addTranslate: function ( message ) {
-			var $message,
-				targetLangDir, targetLangAttrib,
-				targetLangCode = this.$container.data( 'targetlangcode' ),
+			var targetLangCode = this.$container.data( 'targetlangcode' ),
 				sourceLangCode = this.$container.data( 'sourcelangcode' ),
 				sourceLangDir = $.uls.data.getDir( sourceLangCode ),
 				status = message.properties.status,
@@ -175,6 +169,7 @@
 				statusMsg = 'tux-status-' + status;
 			}
 
+			var targetLangDir, targetLangAttrib;
 			if ( targetLangCode === mw.config.get( 'wgTranslateDocumentationLanguageCode' ) ) {
 				targetLangAttrib = mw.config.get( 'wgContentLanguage' );
 				targetLangDir = $.uls.data.getDir( targetLangAttrib );
@@ -183,7 +178,7 @@
 				targetLangDir = this.$container.data( 'targetlangdir' );
 			}
 
-			$message = $( '<div>' )
+			var $message = $( '<div>' )
 				.addClass( 'row message tux-message-item ' + status )
 				.append(
 					$( '<div>' )
@@ -251,9 +246,7 @@
 		 * @param {Object} message
 		 */
 		addProofread: function ( message ) {
-			var $message, $icon;
-
-			$message = $( '<div>' )
+			var $message = $( '<div>' )
 				.addClass( 'row tux-message tux-message-proofread' );
 
 			this.$container.append( $message );
@@ -263,7 +256,7 @@
 				targetlangcode: this.$container.data( 'targetlangcode' )
 			} );
 
-			$icon = $message.find( '.tux-proofread-action' );
+			var $icon = $message.find( '.tux-proofread-action' );
 			if ( $icon.length === 0 ) {
 				return;
 			}
@@ -285,14 +278,18 @@
 				} );
 
 				setTimeout( function () {
-					var offset, $visibleIcon = $( '.autotooltip:visible' );
+					var $visibleIcon = $( '.autotooltip:visible' );
 					if ( !$visibleIcon.length ) {
 						return;
 					}
 
-					offset = $visibleIcon.offset();
+					var offset = $visibleIcon.offset();
 					tooltip.$element.appendTo( document.body );
-					tooltip.toggle( true ).toggleClipping( false ).togglePositioning( false );
+					tooltip
+						.toggle( true )
+						.toggleClipping( false )
+						.togglePositioning( false )
+						.setAnchorEdge( 'top' );
 					tooltip.$element.css( {
 						top: offset.top + $visibleIcon.outerHeight() + 5,
 						left: offset.left + $visibleIcon.outerWidth() - tooltip.$element.width() / 2 - 15
@@ -311,9 +308,7 @@
 		 * @param {Object} message
 		 */
 		addPageModeMessage: function ( message ) {
-			var $message;
-
-			$message = $( '<div>' )
+			var $message = $( '<div>' )
 				.addClass( 'row tux-message tux-message-pagemode' );
 
 			this.$container.append( $message );
@@ -330,8 +325,7 @@
 		 * @param {string} query
 		 */
 		search: function ( query ) {
-			var $note, $button, $result,
-				resultCount = 0,
+			var resultCount = 0,
 				matcher = new RegExp( '(^|\\s|\\b)' + escapeRegex( query ), 'gi' );
 
 			this.$container.find( itemsClass[ this.mode ] ).each( function () {
@@ -348,12 +342,12 @@
 				}
 			} );
 
-			$result = this.$container.find( '.tux-message-filter-result' );
+			var $result = this.$container.find( '.tux-message-filter-result' );
 			if ( !$result.length ) {
-				$note = $( '<div>' )
+				var $note = $( '<div>' )
 					.addClass( 'advanced-search' );
 
-				$button = $( '<button>' )
+				var $button = $( '<button>' )
 					.addClass( 'mw-ui-button' )
 					.text( mw.msg( 'tux-message-filter-advanced-button' ) );
 
@@ -383,12 +377,13 @@
 		},
 
 		resize: function () {
-			var actualWidth = 0, $messageSelector = $( '.row.tux-message-selector' );
+			var $messageSelector = $( '.row.tux-message-selector' );
 
 			if ( $messageSelector.is( ':hidden' ) ) {
 				return;
 			}
 
+			var actualWidth = 0;
 			// Calculate the total width required for the filters
 			$messageSelector.children( 'li' ).each( function () {
 				actualWidth += $( this ).outerWidth( true );
@@ -433,7 +428,8 @@
 				.removeData()
 				.languagestatsbar( {
 					language: this.settings.language,
-					group: this.settings.group
+					group: this.settings.group,
+					onlyLoadCurrentGroupData: true
 				} );
 
 			this.initialized = true;
@@ -458,9 +454,7 @@
 		 * @param {number} [limit] Only load this many messages and then stop even if there is more.
 		 */
 		load: function ( limit ) {
-			var remaining,
-				query,
-				self = this,
+			var self = this,
 				offset = this.$loader.data( 'offset' ),
 				pageSize = limit || this.$loader.data( 'pagesize' );
 
@@ -484,8 +478,7 @@
 				pageSize,
 				this.settings.filter
 			).done( function ( result ) {
-				var messages = result.query.messagecollection,
-					state, i;
+				var messages = result.query.messagecollection;
 
 				if ( !self.loading ) {
 					// reject. This was cancelled.
@@ -493,7 +486,7 @@
 				}
 
 				if ( result.warnings ) {
-					for ( i = 0; i !== result.warnings.length; i++ ) {
+					for ( var i = 0; i !== result.warnings.length; i++ ) {
 						if ( result.warnings[ i ].code === 'translate-language-disabled-source' ) {
 							self.handleLoadErrors( [ result.warnings[ i ] ] );
 							break;
@@ -519,7 +512,7 @@
 					}
 				} );
 
-				state = result.query.metadata && result.query.metadata.state;
+				var state = result.query.metadata && result.query.metadata.state;
 				$( '.tux-workflow' ).workflowselector(
 					self.settings.group,
 					self.settings.language,
@@ -527,7 +520,7 @@
 				).removeClass( 'hide' );
 
 				// Dynamically loaded messages should pass the search filter if present.
-				query = $( '.tux-message-filter-box' ).val();
+				var query = $( '.tux-message-filter-box' ).val();
 
 				if ( query ) {
 					self.search( query );
@@ -537,14 +530,10 @@
 					// End of messages
 					self.$loader.data( 'offset', -1 )
 						.addClass( 'hide' );
-
-					// Helpfully open the first message in show mode
-					// TODO: Refactor to avoid direct DOM access
-					$( '.tux-message-item' ).first().trigger( 'click' );
 				} else {
 					self.$loader.data( 'offset', result[ 'query-continue' ].messagecollection.mcoffset );
 
-					remaining = result.query.metadata.remaining;
+					var remaining = result.query.metadata.remaining;
 
 					self.$loaderInfo.text(
 						mw.msg( 'tux-messagetable-more-messages', remaining )
@@ -552,6 +541,13 @@
 
 					// Make sure the floating toolbars are visible without the need for scroll
 					$( window ).trigger( 'scroll' );
+				}
+
+				// Helpfully open the first message in show mode on page load
+				// But do not open it if we are at the bottom of the page waiting for more translation units
+				if ( self.messages.length <= pageSize ) {
+					// TODO: Refactor to avoid direct DOM access
+					$( '.tux-message-item' ).first().trigger( 'click' );
 				}
 
 				self.updateHideOwnInProofreadingToggleVisibility();
@@ -680,7 +676,7 @@
 					$actions.append( messageTable.otherActionButton(
 						'tux-empty-list-translated-action',
 						function () {
-							mw.translate.changeFilter( $( '.tux-tab-untranslated' ).trigger( 'click' ) );
+							$( '.tux-tab-untranslated' ).trigger( 'click' );
 						} )
 					);
 				} else {
@@ -717,10 +713,7 @@
 		switchMode: function ( mode ) {
 			var messageTable = this,
 				filter = this.settings.filter,
-				userId = mw.config.get( 'wgUserId' ),
-				$tuxTabUntranslated,
-				$tuxTabUnproofread,
-				$hideTranslatedButton;
+				userId = mw.config.get( 'wgUserId' );
 
 			messageTable.$actionBar.find( '.tux-view-switcher .down' ).removeClass( 'down' );
 			if ( mode === 'translate' ) {
@@ -742,9 +735,9 @@
 			messageTable.$container.empty();
 			$( '.translate-tooltip' ).remove();
 
-			$tuxTabUntranslated = $( '.tux-message-selector > .tux-tab-untranslated' );
-			$tuxTabUnproofread = $( '.tux-message-selector > .tux-tab-unproofread' );
-			$hideTranslatedButton = messageTable.$actionBar.find( '.tux-editor-clear-translated' );
+			var $tuxTabUntranslated = $( '.tux-message-selector > .tux-tab-untranslated' );
+			var $tuxTabUnproofread = $( '.tux-message-selector > .tux-tab-unproofread' );
+			var $hideTranslatedButton = messageTable.$actionBar.find( '.tux-editor-clear-translated' );
 
 			if ( messageTable.mode === 'proofread' ) {
 				$tuxTabUntranslated.addClass( 'hide' );
@@ -798,30 +791,20 @@
 		 * The scroll handler
 		 */
 		scroll: function () {
-			var $window,
-				isActionBarFloating,
-				needsTableHeaderFloat, needsTableHeaderStick,
-				needsActionBarFloat, needsActionBarStick,
-				windowScrollTop, windowScrollBottom,
-				messageTableRelativePos,
-				messageListOffset,
-				messageListHeight, messageListWidth,
-				messageListTop, messageListBottom;
+			var $window = $( window );
 
-			$window = $( window );
-
-			windowScrollTop = $window.scrollTop();
-			windowScrollBottom = windowScrollTop + $window.height();
-			messageListOffset = this.$container.offset();
-			messageListHeight = this.$container.height();
-			messageListTop = messageListOffset.top;
-			messageListBottom = messageListTop + messageListHeight;
-			messageListWidth = this.$container.width();
+			var windowScrollTop = $window.scrollTop();
+			var windowScrollBottom = windowScrollTop + $window.height();
+			var messageListOffset = this.$container.offset();
+			var messageListHeight = this.$container.height();
+			var messageListTop = messageListOffset.top;
+			var messageListBottom = messageListTop + messageListHeight;
+			var messageListWidth = this.$container.width();
 
 			// Header:
-			messageTableRelativePos = messageListTop - this.$header.height() - windowScrollTop;
-			needsTableHeaderFloat = messageTableRelativePos + 10 < 0;
-			needsTableHeaderStick = messageTableRelativePos - 10 >= 0;
+			var messageTableRelativePos = messageListTop - this.$header.height() - windowScrollTop;
+			var needsTableHeaderFloat = messageTableRelativePos + 10 < 0;
+			var needsTableHeaderStick = messageTableRelativePos - 10 >= 0;
 			if ( needsTableHeaderFloat ) {
 				this.$header.addClass( 'floating' ).width( messageListWidth );
 			} else if ( needsTableHeaderStick ) {
@@ -830,9 +813,9 @@
 			}
 
 			// Action bar:
-			isActionBarFloating = this.$actionBar.hasClass( 'floating' );
-			needsActionBarFloat = windowScrollBottom < messageListBottom;
-			needsActionBarStick = windowScrollBottom > ( messageListBottom + this.$actionBar.height() );
+			var isActionBarFloating = this.$actionBar.hasClass( 'floating' );
+			var needsActionBarFloat = windowScrollBottom < messageListBottom;
+			var needsActionBarStick = windowScrollBottom > ( messageListBottom + this.$actionBar.height() );
 
 			if ( !isActionBarFloating && needsActionBarFloat ) {
 				this.$actionBar.addClass( 'floating' ).width( messageListWidth );
@@ -866,6 +849,48 @@
 			this.$loader.data( 'offset', -1 ).addClass( 'hide' );
 			this.$actionBar.addClass( 'hide' );
 			this.$header.addClass( 'hide' );
+		},
+
+		/**
+		 * Return a function, that, when invoked, will only be triggered at most once
+		 * during a given window of time. If called again during that window, it will
+		 * wait until the window ends and then trigger itself again.
+		 *
+		 * As it's not knowable to the caller whether the function will actually run
+		 * when the wrapper is called, return values from the function are entirely
+		 * discarded.
+		 *
+		 * Ported from OOUI.
+		 * Imported from MediaWiki core (commit f4db95c by Esanders - 2022-02-08).
+		 * TODO: replace with mw.util.throttle when Translate support MediaWiki 1.38+
+		 *
+		 * @param {Function} func Function to throttle
+		 * @param {number} wait Throttle window length, in milliseconds
+		 * @return {Function} Throttled function
+		 */
+		throttle: function ( func, wait ) {
+			var context, args, timeout,
+				previous = Date.now() - wait,
+				run = function () {
+					timeout = null;
+					previous = Date.now();
+					func.apply( context, args );
+				};
+			return function () {
+				// Check how long it's been since the last time the function was
+				// called, and whether it's more or less than the requested throttle
+				// period. If it's less, run the function immediately. If it's more,
+				// set a timeout for the remaining time -- but don't replace an
+				// existing timeout, since that'd indefinitely prolong the wait.
+				var remaining = Math.max( wait - ( Date.now() - previous ), 0 );
+				context = this;
+				args = arguments;
+				if ( !timeout ) {
+					// If time is up, do setTimeout( run, 0 ) so the function
+					// always runs asynchronously, just like Promise#then .
+					timeout = setTimeout( run, remaining );
+				}
+			};
 		}
 	};
 
@@ -905,13 +930,12 @@
 	}
 
 	function isLoaderVisible( $loader ) {
-		var viewportBottom, elementTop,
-			$window = $( window );
+		var $window = $( window );
 
-		viewportBottom = ( window.innerHeight ? window.innerHeight : $window.height() ) +
+		var viewportBottom = ( window.innerHeight ? window.innerHeight : $window.height() ) +
 			$window.scrollTop();
 
-		elementTop = $loader.offset().top;
+		var elementTop = $loader.offset().top;
 
 		// Start already if user is reaching close to the bottom
 		return elementTop - viewportBottom < 200;

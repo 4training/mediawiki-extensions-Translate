@@ -9,6 +9,7 @@
  */
 
 use MediaWiki\Extension\Translate\Jobs\GenericTranslateJob;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\MediaWikiServices;
 
@@ -35,7 +36,7 @@ class MessageGroupStatesUpdaterJob extends GenericTranslateJob {
 	 */
 	public static function onChange( MessageHandle $handle ) {
 		$job = self::newJob( $handle->getTitle() );
-		JobQueueGroup::singleton()->push( $job );
+		MediaWikiServices::getInstance()->getJobQueueGroup()->push( $job );
 
 		return true;
 	}
@@ -65,12 +66,13 @@ class MessageGroupStatesUpdaterJob extends GenericTranslateJob {
 		}
 
 		$groups = self::getGroupsWithTransitions( $handle );
+		$messageGroupReview = Services::getInstance()->getMessageGroupReview();
 		foreach ( $groups as $id => $transitions ) {
 			$group = MessageGroups::getGroup( $id );
-			$stats = MessageGroupStats::forItem( $id, $code );
+			$stats = MessageGroupStats::forItem( $id, $code, MessageGroupStats::FLAG_IMMEDIATE_WRITES );
 			$state = self::getNewState( $stats, $transitions );
 			if ( $state ) {
-				ApiGroupReview::changeState( $group, $code, $state, FuzzyBot::getUser() );
+				$messageGroupReview->changeState( $group, $code, $state, FuzzyBot::getUser() );
 			}
 		}
 

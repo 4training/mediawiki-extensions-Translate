@@ -37,7 +37,7 @@
 	"apihelp-managemessagegroups-param-groupId": "Id kelompok",
 	"apihelp-managemessagegroups-param-renameMessageKey": "Kunci pesan tujuan yang diubah namanya",
 	"apihelp-managemessagegroups-param-messageKey": "Kunci pesan pengganti",
-	"apihelp-managemessagegroups-param-operation": "Operasi yang dialkukan. Nilai-nilai yang mungkin - rename / new",
+	"apihelp-managemessagegroups-param-operation": "Operasi yang dilakukan. Nilai-nilai yang mungkin: - rename / new",
 	"apihelp-translatesandbox-param-userid": "ID pengguna dari pengguna yang sedang dikelola. Gunakan 0 untuk pembuatan.",
 	"apihelp-translatesandbox-param-username": "Nama pengguna ketika membuat pengguna.",
 	"apihelp-translatesandbox-param-password": "Kata sandi ketika membuat pengguna.",
@@ -96,7 +96,7 @@
 	"apierror-translate-invalidaggregategroup": "Kelompok pesan agregat tidak valid",
 	"apierror-translate-invalidaggregategroupname": "Nama kelompok pesan agregat tidak valid",
 	"apierror-translate-invalidgroup": "Kelompok tidak ada atau tidak valid",
-	"apierror-translate-invalidlanguage": "Bahasa yang diminta tidak valid.",
+	"apierror-translate-invalidlanguage": "Kode bahasa $1 tidak valid.",
 	"apierror-translate-invalidupdate": "Pembaruan tidak valid",
 	"apierror-translate-language-disabled": "Terjemahan ke $1 dimatikan.",
 	"apierror-translate-language-disabled-reason": "Terjemahan ke $1 dimatikan: $2",
@@ -109,5 +109,8 @@
 	"apierror-translate-unknownmessage": "Pesan tidak dikenal",
 	"apierror-translate-invalid-operation": "Operasi tidak valid: $1. Nilai-nilai yang valid - $2.",
 	"apiwarn-translate-alreadyreviewedbyyou": "Sudah ditandai sebagai tertinjau oleh Anda",
-	"apiwarn-translate-language-disabled-source": "Bahasa sumber dari kelompok ini adalah $1. Tolong pilih bahasa lain sebagai tujuan terjemahan."
+	"apiwarn-translate-language-disabled-source": "Bahasa sumber dari kelompok ini adalah $1. Tolong pilih bahasa lain sebagai tujuan terjemahan.",
+	"apihelp-translationentitysearch-summary": "Mencari kelompok pesan dan pesan",
+	"apihelp-translationentitysearch-param-query": "Mencari kueri",
+	"apihelp-translationentitysearch-param-limit": "Banyak hasil pencarian maksimal"
 }

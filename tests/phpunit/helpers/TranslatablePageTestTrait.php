@@ -4,6 +4,9 @@
  * @file
  */
 
+use MediaWiki\Extension\Translate\PageTranslation\TranslatablePage;
+use MediaWiki\MediaWikiServices;
+
 /**
  * A utility trait containing reusable methods for use in tests
  * @since 2020.04
@@ -42,13 +45,13 @@ trait TranslatablePageTestTrait {
 	): TranslatablePage {
 		// Create new page
 		$translatablePageTitle = Title::newFromText( $title );
-		$page = WikiPage::factory( $translatablePageTitle );
+		$page = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $translatablePageTitle );
 		$text = "<translate>$content</translate>";
 		$content = ContentHandler::makeContent( $text, $translatablePageTitle );
 		$translatablePage = TranslatablePage::newFromTitle( $translatablePageTitle );
 
 		// Create the page
-		$editStatus = $page->doEditContent( $content, __METHOD__, 0, false, $creator );
+		$editStatus = $page->doUserEditContent( $content, $creator, __METHOD__ );
 
 		if ( $markForTranslation ) {
 			// Mark the page for translation

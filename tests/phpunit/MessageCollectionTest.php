@@ -20,7 +20,7 @@ class MessageCollectionTest extends MediaWikiIntegrationTestCase {
 		$this->setTemporaryHook( 'TranslatePostInitGroups', [ $this, 'getTestGroups' ] );
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 
 		MessageIndex::setInstance( new HashMessageIndex() );
@@ -42,10 +42,10 @@ class MessageCollectionTest extends MediaWikiIntegrationTestCase {
 	public function testMessage() {
 		$user = $this->getTestSysop()->getUser();
 		$title = Title::newFromText( 'MediaWiki:Translated/fi' );
-		$page = WikiPage::factory( $title );
+		$page = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( 'pupuliini', $title );
 
-		$status = $page->doEditContent( $content, __METHOD__, 0, false, $user );
+		$status = $page->doUserEditContent( $content, $user, __METHOD__ );
 
 		$value = $status->getValue();
 		$revisionRecord = $value['revision-record'];
@@ -57,7 +57,7 @@ class MessageCollectionTest extends MediaWikiIntegrationTestCase {
 
 		/** @var TMessage $translated */
 		$translated = $collection['translated'];
-		$this->assertInstanceOf( 'TMessage', $translated );
+		$this->assertInstanceOf( TMessage::class, $translated );
 		$this->assertEquals( 'translated', $translated->key() );
 		$this->assertEquals( 'bunny', $translated->definition() );
 		$this->assertEquals( 'pupuliini', $translated->translation() );
@@ -72,7 +72,7 @@ class MessageCollectionTest extends MediaWikiIntegrationTestCase {
 
 		/** @var TMessage $untranslated */
 		$untranslated = $collection['untranslated'];
-		$this->assertInstanceOf( 'TMessage', $untranslated );
+		$this->assertInstanceOf( TMessage::class, $untranslated );
 		$this->assertNull( $untranslated->translation(), 'no translation is null' );
 		$this->assertNull( $untranslated->getProperty( 'last-translator-text' ) );
 		$this->assertNull( $untranslated->getProperty( 'last-translator-id' ) );

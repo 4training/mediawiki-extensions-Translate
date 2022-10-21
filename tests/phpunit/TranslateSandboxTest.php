@@ -20,6 +20,7 @@ class TranslateSandboxTest extends MediaWikiIntegrationTestCase {
 
 		// Make sure the hooks are installed even if $wgTranslateUseSandbox is false.
 		TranslateHooks::setupTranslate();
+		$this->tablesUsed[] = 'user';
 	}
 
 	/**
@@ -27,13 +28,8 @@ class TranslateSandboxTest extends MediaWikiIntegrationTestCase {
 	 * @return array|string[]
 	 */
 	private function getUserGroups( User $user ): array {
-		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
-			// MediaWiki 1.35+
-			$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
-			$groups = $userGroupManager->getUserGroups( $user );
-		} else {
-			$groups = $user->getGroups();
-		}
+		$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
+		$groups = $userGroupManager->getUserGroups( $user );
 
 		return $groups;
 	}

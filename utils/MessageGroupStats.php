@@ -38,7 +38,7 @@ class MessageGroupStats {
 	/** @var array[] */
 	protected static $updates = [];
 	/** @var string[] */
-	 private static $languages;
+	private static $languages;
 
 	/**
 	 * Returns empty stats array. Useful because the number of elements
@@ -175,24 +175,28 @@ class MessageGroupStats {
 	 * Hook: TranslateEventTranslationReview
 	 * @param MessageHandle $handle
 	 */
-	public static function clear( MessageHandle $handle ) {
+	public static function clear( MessageHandle $handle ): void {
 		$code = $handle->getCode();
+		if ( !self::isValidLanguage( $code ) ) {
+			return;
+		}
 		$groups = self::getSortedGroupsForClearing( $handle->getGroupIds() );
-		self::internalClearGroups( $code, $groups );
+		self::internalClearGroups( $code, $groups, 0 );
 	}
 
 	/**
 	 * Recalculate stats for given group(s).
 	 *
 	 * @param string|string[] $id Message group ids.
+	 * @param int $flags Combination of FLAG_* constants.
 	 */
-	public static function clearGroup( $id ) {
+	public static function clearGroup( $id, int $flags = 0 ): void {
 		$languages = self::getLanguages();
 		$groups = self::getSortedGroupsForClearing( (array)$id );
 
 		// Do one language at a time, to save memory
 		foreach ( $languages as $code ) {
-			self::internalClearGroups( $code, $groups );
+			self::internalClearGroups( $code, $groups, $flags );
 		}
 	}
 
@@ -201,12 +205,13 @@ class MessageGroupStats {
 	 *
 	 * @param string $code
 	 * @param MessageGroup[] $groups
+	 * @param int $flags Combination of FLAG_* constants.
 	 */
-	private static function internalClearGroups( $code, array $groups ) {
+	private static function internalClearGroups( $code, array $groups, int $flags ): void {
 		$stats = [];
 		foreach ( $groups as $group ) {
 			// $stats is modified by reference
-			self::forItemInternal( $stats, $group, $code, 0 );
+			self::forItemInternal( $stats, $group, $code, $flags );
 		}
 		self::queueUpdates( 0 );
 	}
@@ -259,7 +264,7 @@ class MessageGroupStats {
 		if ( !count( $code ) ) {
 			return;
 		}
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$conds = [ 'tgs_lang' => $code ];
 		$dbw->delete( self::TABLE, $conds, __METHOD__ );
 		wfDebugLog( 'messagegroupstats', 'Cleared ' . serialize( $conds ) );
@@ -267,9 +272,11 @@ class MessageGroupStats {
 
 	/**
 	 * Purges all cached stats.
+	 *
+	 * Mostly for testing purposes. Calling this in normal operation will cause performance issues.
 	 */
 	public static function clearAll() {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$dbw->delete( self::TABLE, '*', __METHOD__ );
 		wfDebugLog( 'messagegroupstats', 'Cleared everything :(' );
 	}
@@ -278,7 +285,7 @@ class MessageGroupStats {
 	 * Use this to extract results returned from selectRowsIdLang. You must pass the
 	 * message group ids you want to retrieve. Entries that do not match are not returned.
 	 *
-	 * @param Traversable $res Database result object
+	 * @param iterable $res Database result object
 	 * @param string[] $ids List of message group ids
 	 * @param array[] $stats Optional array to append results to.
 	 * @return array[]
@@ -299,26 +306,6 @@ class MessageGroupStats {
 		}
 
 		return $stats;
-	}
-
-	public static function update( MessageHandle $handle, array $changes = [] ) {
-		$dbids = array_map( 'self::getDatabaseIdForGroupId', $handle->getGroupIds() );
-
-		$dbw = wfGetDB( DB_MASTER );
-		$conds = [
-			'tgs_group' => $dbids,
-			'tgs_lang' => $handle->getCode(),
-		];
-
-		$values = [];
-		foreach ( [ 'total', 'translated', 'fuzzy', 'proofread' ] as $type ) {
-			if ( isset( $changes[$type] ) ) {
-				$values[] = "tgs_$type=tgs_$type" .
-					self::stringifyNumber( $changes[$type] );
-			}
-		}
-
-		$dbw->update( self::TABLE, $values, $conds, __METHOD__ );
 	}
 
 	/**
@@ -412,7 +399,7 @@ class MessageGroupStats {
 	 * @param ?string[] $ids List of message group ids
 	 * @param ?string[] $codes List of language codes
 	 * @param int $flags Combination of FLAG_* constants.
-	 * @return Traversable Database result object
+	 * @return iterable Database result object
 	 */
 	protected static function selectRowsIdLang( ?array $ids, ?array $codes, $flags ) {
 		if ( $flags & self::FLAG_NO_CACHE ) {
@@ -450,6 +437,23 @@ class MessageGroupStats {
 			return $stats[$id][$code];
 		}
 
+		// It may happen that caches are requested repeatedly for a group before we get a chance
+		// to write the values to the database. Check for queued updates first. This has the
+		// benefit of avoiding duplicate rows for inserts. Ideally this would be checked before we
+		// query the database for missing values. This code is somewhat ugly as it needs to
+		// reverse engineer the values from the row format.
+		$databaseGroupId = self::getDatabaseIdForGroupId( $id );
+		$uniqueKey = "$databaseGroupId|$code";
+		$queuedValue = self::$updates[$uniqueKey] ?? null;
+		if ( $queuedValue && !( $flags & self::FLAG_NO_CACHE ) ) {
+			return [
+				self::TOTAL => $queuedValue['tgs_total'],
+				self::TRANSLATED => $queuedValue['tgs_translated'],
+				self::FUZZY => $queuedValue['tgs_fuzzy'],
+				self::PROOFREAD => $queuedValue['tgs_proofread'],
+			];
+		}
+
 		if ( $group instanceof AggregateMessageGroup ) {
 			$aggregates = self::calculateAggregageGroup( $stats, $group, $code, $flags );
 		} else {
@@ -463,8 +467,8 @@ class MessageGroupStats {
 			return $aggregates;
 		}
 
-		self::$updates[] = [
-			'tgs_group' => self::getDatabaseIdForGroupId( $id ),
+		self::$updates[$uniqueKey] = [
+			'tgs_group' => $databaseGroupId,
 			'tgs_lang' => $code,
 			'tgs_total' => $aggregates[self::TOTAL],
 			'tgs_translated' => $aggregates[self::TRANSLATED],
@@ -510,8 +514,7 @@ class MessageGroupStats {
 				$stats[$sid][$code] = self::forItemInternal( $stats, $subgroup, $code, $flags );
 			}
 
-			$include = Hooks::run( 'Translate:MessageGroupStats:isIncluded', [ $sid, $code ] );
-			if ( $include ) {
+			if ( !TranslateMetadata::isExcluded( $sid, $code ) ) {
 				$aggregates = self::multiAdd( $aggregates, $stats[$sid][$code] );
 			}
 		}
@@ -540,22 +543,20 @@ class MessageGroupStats {
 		// Calculate if missing and store in the db
 		$collection = $group->initCollection( $code );
 
-		if ( $code === $wgTranslateDocumentationLanguageCode ) {
-			$ffs = $group->getFFS();
-			if ( $ffs instanceof GettextFFS ) {
-				/** @var FileBasedMessageGroup $group */
-				'@phan-var FileBasedMessageGroup $group';
-				$cache = $group->getMessageGroupCache( $group->getSourceLanguage() );
-				if ( $cache->exists() ) {
-					$template = $cache->getExtra()['TEMPLATE'] ?? [];
-					$infile = [];
-					foreach ( $template as $key => $data ) {
-						if ( isset( $data['comments']['.'] ) ) {
-							$infile[$key] = '1';
-						}
+		if (
+			$code === $wgTranslateDocumentationLanguageCode
+			&& $group instanceof FileBasedMessageGroup
+		) {
+			$cache = $group->getMessageGroupCache( $group->getSourceLanguage() );
+			if ( $cache->exists() ) {
+				$template = $cache->getExtra()['TEMPLATE'] ?? [];
+				$infile = [];
+				foreach ( $template as $key => $data ) {
+					if ( isset( $data['comments']['.'] ) ) {
+						$infile[$key] = '1';
 					}
-					$collection->setInFile( $infile );
 				}
+				$collection->setInFile( $infile );
 			}
 		}
 
@@ -585,19 +586,8 @@ class MessageGroupStats {
 		];
 	}
 
-	/**
-	 * Converts input to "+2" "-4" type of string.
-	 * @param int $number
-	 * @return string
-	 */
-	protected static function stringifyNumber( $number ) {
-		$number = (int)$number;
-
-		return $number < 0 ? "$number" : "+$number";
-	}
-
 	protected static function queueUpdates( $flags ) {
-		if ( wfReadOnly() ) {
+		if ( MediaWikiServices::getInstance()->getReadOnlyMode()->isReadOnly() ) {
 			return;
 		}
 
@@ -606,35 +596,36 @@ class MessageGroupStats {
 		}
 
 		$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
-		$dbw = $lb->getLazyConnectionRef( DB_MASTER ); // avoid connecting yet
+		$dbw = $lb->getConnectionRef( DB_PRIMARY ); // avoid connecting yet
 		$table = self::TABLE;
-		$updates = &self::$updates;
+		$callers = wfGetAllCallers( 50 );
 
 		$updateOp = self::withLock(
 			$dbw,
 			'updates',
 			__METHOD__,
-			function ( IDatabase $dbw, $method ) use ( $table, &$updates ) {
+			static function ( IDatabase $dbw, $method ) use ( $table, $callers ) {
 				// Maybe another deferred update already processed these
-				if ( $updates === [] ) {
+				if ( self::$updates === [] ) {
 					return;
 				}
 
 				// This path should only be hit during web requests
-				if ( count( $updates ) > 100 ) {
-					$groups = array_unique( array_column( $updates, 'tgs_group' ) );
+				if ( count( self::$updates ) > 100 ) {
+					$groups = array_unique( array_column( self::$updates, 'tgs_group' ) );
 					LoggerFactory::getInstance( 'Translate' )->warning(
 						"Huge translation update of {count} rows for group(s) {groups}",
 						[
-							'count' => count( $updates ),
+							'count' => count( self::$updates ),
 							'groups' => implode( ', ', $groups ),
+							'callers' => $callers,
 						]
 					);
 				}
 
 				$primaryKey = [ 'tgs_group', 'tgs_lang' ];
-				$dbw->replace( $table, [ $primaryKey ], $updates, $method );
-				$updates = [];
+				$dbw->replace( $table, [ $primaryKey ], array_values( self::$updates ), $method );
+				self::$updates = [];
 			}
 		);
 
@@ -647,7 +638,7 @@ class MessageGroupStats {
 
 	protected static function withLock( IDatabase $dbw, $key, $method, $callback ) {
 		$fname = __METHOD__;
-		return function () use ( $dbw, $key, $method, $callback, $fname ) {
+		return static function () use ( $dbw, $key, $method, $callback, $fname ) {
 			$lockName = 'MessageGroupStats:' . $key;
 			if ( !$dbw->lock( $lockName, $fname, 1 ) ) {
 				return; // raced out

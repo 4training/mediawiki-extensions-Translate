@@ -50,7 +50,7 @@ class NewlineValidator implements MessageValidator {
 				$translationStartNewline - $definitionStartNewline
 			];
 		} elseif ( $definitionStartNewline > $translationStartNewline ) {
-			// Missing whitespace at beginnning
+			// Missing whitespace at beginning
 			$failingChecks[] = [
 				'missing-start',
 				$definitionStartNewline - $translationStartNewline
@@ -98,5 +98,3 @@ class NewlineValidator implements MessageValidator {
 		return $issues;
 	}
 }
-
-class_alias( NewlineValidator::class, '\MediaWiki\Extensions\Translate\NewlineValidator' );

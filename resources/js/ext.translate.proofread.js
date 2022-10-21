@@ -3,6 +3,7 @@
 
 	/**
 	 * Proofread Plugin
+	 *
 	 * Prepare a proofread UI with all the required actions
 	 * for a translation unit (message).
 	 * This is mainly used with the messagetable plugin in proofread mode,
@@ -35,7 +36,7 @@
 		 * Initialize the plugin
 		 */
 		init: function () {
-			var proofread = this;
+			var that = this;
 
 			this.render();
 
@@ -53,52 +54,55 @@
 				this.disableProofread();
 			}
 
-			proofread.$message.translateeditor( {
-				message: proofread.message,
+			this.$message.translateeditor( {
+				message: this.message,
+				beforeSave: function ( translation ) {
+					that.$message.find( '.tux-proofread-translation' )
+						.html( mw.translate.formatMessageGently( translation || '', that.message.key ) )
+						.addClass( 'highlight' );
+				},
 				onSave: function ( translation ) {
-					proofread.$message.find( '.tux-proofread-translation' )
-						.text( translation );
-					proofread.message.translation = translation;
-					proofread.markSelfTranslation();
+					that.$message.find( '.tux-proofread-translation' )
+						.text( translation )
+						.removeClass( 'highlight' );
+					that.message.translation = translation;
+					that.markSelfTranslation();
 
-					proofread.$message.find( '.tux-proofread-status' )
+					// `status` class is documented elsewhere
+					// eslint-disable-next-line mediawiki/class-doc
+					that.$message.find( '.tux-proofread-status' )
 						.removeClass( 'translated fuzzy proofread untranslated' )
-						.addClass( proofread.message.properties.status );
+						.addClass( that.message.properties.status );
 				}
 			} );
 
 		},
 
 		render: function () {
-			var targetLangCode, targetLangDir, targetLangAttrib,
-				sourceLangCode, sourceLangDir,
-				$proofreadAction, $proofreadEdit, userId, reviewers, otherReviewers,
-				translatedBySelf, proofreadBySelf;
-
 			// List of all reviewers
-			reviewers = this.message.properties.reviewers || [];
+			var reviewers = this.message.properties.reviewers || [];
 			// The id of the current user, converted to string as the are in reviewers
-			userId = String( mw.config.get( 'wgUserId' ) );
+			var userId = String( mw.config.get( 'wgUserId' ) );
 			// List of all reviewers excluding the current user.
-			otherReviewers = reviewers.filter( function ( element ) {
+			var otherReviewers = reviewers.filter( function ( element ) {
 				return element !== userId;
 			} );
 			/* Whether the current user if the last translator of this message.
 			 * Accepting own translations is prohibited. */
-			translatedBySelf = ( this.message.properties[ 'last-translator-text' ] === mw.user.getName() );
-			proofreadBySelf = reviewers.indexOf( userId ) > -1;
+			var translatedBySelf = ( this.message.properties[ 'last-translator-text' ] === mw.user.getName() );
+			var proofreadBySelf = reviewers.indexOf( userId ) > -1;
 
-			sourceLangCode = this.options.sourcelangcode;
-			sourceLangDir = $.uls.data.getDir( sourceLangCode );
-			targetLangCode = this.options.targetlangcode;
+			var sourceLangDir = $.uls.data.getDir( this.options.sourcelangcode );
 
-			$proofreadAction = $( '<div>' )
+			// `status` class is documented elsewhere
+			// eslint-disable-next-line mediawiki/class-doc
+			var $proofreadAction = $( '<div>' )
 				.attr( 'title', mw.msg( 'tux-proofread-action-tooltip' ) )
 				.addClass(
 					'tux-proofread-action ' + this.message.properties.status + ' ' + ( proofreadBySelf ? 'accepted' : '' )
 				);
 
-			$proofreadEdit = $( '<div>' )
+			var $proofreadEdit = $( '<div>' )
 				.addClass( 'tux-proofread-edit' )
 				.append( $( '<span>' )
 					.addClass( 'tux-proofread-edit-label hide' )
@@ -111,23 +115,29 @@
 					$( this ).find( '.tux-proofread-edit-label' ).addClass( 'hide' );
 				} );
 
-			if ( targetLangCode === mw.config.get( 'wgTranslateDocumentationLanguageCode' ) ) {
+			var targetLangAttrib;
+			if ( this.options.targetlangcode === mw.config.get( 'wgTranslateDocumentationLanguageCode' ) ) {
 				targetLangAttrib = mw.config.get( 'wgContentLanguage' );
 			} else {
-				targetLangAttrib = targetLangCode;
+				targetLangAttrib = this.options.targetlangcode;
 			}
-			targetLangDir = $.uls.data.getDir( targetLangAttrib );
 
+			var targetLangDir = $.uls.data.getDir( targetLangAttrib );
+
+			// `status` class is documented elsewhere
+			// eslint-disable-next-line mediawiki/class-doc
 			this.$message.append(
 				$( '<div>' )
 					.addClass( 'row tux-message-item-compact message' )
 					.append(
+						// `status` class is documented elsewhere
+						// eslint-disable-next-line mediawiki/class-doc
 						$( '<div>' )
 							.addClass( 'one column tux-proofread-status ' + this.message.properties.status ),
 						$( '<div>' )
 							.addClass( 'five columns tux-proofread-source' )
 							.attr( {
-								lang: sourceLangCode,
+								lang: this.options.sourcelangcode,
 								dir: sourceLangDir
 							} )
 							.text( this.message.definition ),
@@ -195,12 +205,11 @@
 		 * Mark this message as proofread.
 		 */
 		proofread: function () {
-			var reviews, $counter, params,
-				message = this.message,
+			var message = this.message,
 				$message = this.$message,
 				api = new mw.Api();
 
-			params = {
+			var params = {
 				action: 'translationreview',
 				revision: this.message.properties.revision
 			};
@@ -214,8 +223,8 @@
 					.removeClass( 'tux-notice' ) // in case, it failed previously
 					.addClass( 'accepted' );
 
-				$counter = $message.find( '.tux-proofread-count' );
-				reviews = $counter.data( 'reviewCount' );
+				var $counter = $message.find( '.tux-proofread-count' );
+				var reviews = $counter.data( 'reviewCount' );
 				$counter.text( mw.language.convertNumber( reviews + 1 ) );
 
 				// Update stats
@@ -242,17 +251,17 @@
 		 * Attach event listeners
 		 */
 		listen: function () {
-			var proofread = this;
+			var that = this;
 
 			this.$message.find( '.tux-proofread-action' ).on( 'click', function () {
-				proofread.proofread();
+				that.proofread();
 				return false;
 			} );
 
 			this.$message.find( '.tux-proofread-edit' ).on( 'click', function () {
 				// Make sure that the tooltip is hidden when going to the editor
 				$( '.translate-tooltip' ).remove();
-				proofread.$message.data( 'translateeditor' ).show();
+				that.$message.data( 'translateeditor' ).show();
 
 				return false;
 			} );

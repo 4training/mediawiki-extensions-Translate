@@ -5,6 +5,9 @@
  * @license GPL-2.0-or-later
  */
 
+use Cdb\Reader;
+use Cdb\Writer;
+
 /**
  * Caches messages of file based message group source file. Can also track
  * that the cache is up to date. Parsing the source files can be slow, so
@@ -18,10 +21,10 @@ class MessageGroupCache {
 	public const NO_SOURCE = 1;
 	public const NO_CACHE = 2;
 	public const CHANGED = 3;
-
+	private const VERSION = '4';
 	/** @var FileBasedMessageGroup */
 	protected $group;
-	/** @var \Cdb\Reader */
+	/** @var Reader */
 	protected $cache;
 	/** @var string */
 	protected $code;
@@ -138,7 +141,7 @@ class MessageGroupCache {
 		$hash = md5( file_get_contents( $this->group->getSourceFilePath( $this->code ) ) );
 
 		wfMkdirParents( dirname( $this->getCacheFilePath() ) );
-		$cache = \Cdb\Writer::open( $this->getCacheFilePath() );
+		$cache = Writer::open( $this->getCacheFilePath() );
 
 		foreach ( $messages as $key => $value ) {
 			$cache->set( $key, $value );
@@ -148,10 +151,8 @@ class MessageGroupCache {
 		$cache->set( '#created', $created ?: wfTimestamp() );
 		$cache->set( '#updated', wfTimestamp() );
 		$cache->set( '#filehash', $hash );
-		$cache->set( '#msgcount', count( $messages ) );
-		ksort( $messages );
-		$cache->set( '#msghash', md5( serialize( $messages ) ) );
-		$cache->set( '#version', '3' );
+		$cache->set( '#msghash', md5( serialize( $parseOutput ) ) );
+		$cache->set( '#version', self::VERSION );
 		$cache->close();
 	}
 
@@ -164,8 +165,6 @@ class MessageGroupCache {
 	 */
 	public function isValid( &$reason ) {
 		$group = $this->group;
-		$uniqueId = $this->getCacheFilePath();
-
 		$pattern = $group->getSourceFilePath( '*' );
 		$filename = $group->getSourceFilePath( $this->code );
 
@@ -179,12 +178,12 @@ class MessageGroupCache {
 			$source = $parseOutput['MESSAGES'] !== [];
 		} else {
 			static $globCache = [];
-			if ( !isset( $globCache[$uniqueId] ) ) {
-				$globCache[$uniqueId] = array_flip( glob( $pattern, GLOB_NOESCAPE ) );
+			if ( !isset( $globCache[$pattern] ) ) {
+				$globCache[$pattern] = array_flip( glob( $pattern, GLOB_NOESCAPE ) );
 				// Definition file might not match the above pattern
-				$globCache[$uniqueId][$group->getSourceFilePath( 'en' )] = true;
+				$globCache[$pattern][$group->getSourceFilePath( 'en' )] = true;
 			}
-			$source = isset( $globCache[$uniqueId][$filename] );
+			$source = isset( $globCache[$pattern][$filename] );
 		}
 
 		$cache = $this->exists();
@@ -200,7 +199,14 @@ class MessageGroupCache {
 			$reason = self::NO_SOURCE;
 
 			return false;
-		} elseif ( filemtime( $filename ) <= $this->get( '#updated' ) ) {
+		}
+
+		if ( $this->get( '#version' ) !== self::VERSION ) {
+			$reason = self::CHANGED;
+			return false;
+		}
+
+		if ( filemtime( $filename ) <= $this->get( '#updated' ) ) {
 			return true;
 		}
 
@@ -216,21 +222,9 @@ class MessageGroupCache {
 			return true;
 		}
 
-		// Message count check
+		// Parse output hash check
 		$parseOutput = $parseOutput ?? $group->parseExternal( $this->code );
-		$messages = $parseOutput['MESSAGES'];
-		// CDB converts numbers to strings
-		$count = (int)( $this->get( '#msgcount' ) );
-		if ( $count !== count( $messages ) ) {
-			// Number of messsages has changed
-			$reason = self::CHANGED;
-
-			return false;
-		}
-
-		// Content hash check
-		ksort( $messages );
-		if ( $this->get( '#msghash' ) === md5( serialize( $messages ) ) ) {
+		if ( $this->get( '#msghash' ) === md5( serialize( $parseOutput ) ) ) {
 			// Update cache so that we don't need to do slow checks next time
 			$this->create( $created );
 
@@ -264,11 +258,11 @@ class MessageGroupCache {
 
 	/**
 	 * Open the cache for reading.
-	 * @return \Cdb\Reader
+	 * @return Reader
 	 */
 	protected function open() {
 		if ( $this->cache === null ) {
-			$this->cache = \Cdb\Reader::open( $this->getCacheFilePath() );
+			$this->cache = Reader::open( $this->getCacheFilePath() );
 		}
 
 		return $this->cache;

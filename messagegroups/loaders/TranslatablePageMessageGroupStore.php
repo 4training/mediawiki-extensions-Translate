@@ -7,6 +7,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
+use MediaWiki\Extension\Translate\PageTranslation\TranslatablePage;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\Rdbms\IDatabase;
 
@@ -147,8 +149,8 @@ class TranslatablePageMessageGroupStore extends MessageGroupLoader
 		$groupTitles = [];
 		$tables = [ 'page', 'revtag' ];
 		$vars = [ 'page_id', 'page_namespace', 'page_title' ];
-		$conds = [ 'page_id=rt_page', 'rt_type' => RevTag::getType( 'tp:mark' ) ];
-		$options = [ 'GROUP BY' => 'rt_page' ];
+		$conds = [ 'page_id=rt_page', 'rt_type' => RevTagStore::TP_MARK_TAG ];
+		$options = [ 'GROUP BY' => 'rt_page,page_id,page_namespace,page_title' ];
 		$res = $this->db->select( $tables, $vars, $conds, __METHOD__, $options );
 
 		foreach ( $res as $r ) {

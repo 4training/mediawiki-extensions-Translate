@@ -4,14 +4,13 @@ namespace MediaWiki\Extension\Translate\Synchronization;
 
 use FileBasedMessageGroup;
 use GettextFFS;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\Utilities\BaseMaintenanceScript;
 use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MediaWikiServices;
 use MessageGroup;
 use MessageGroups;
 use MessageGroupStats;
-use MessageHandle;
-use Title;
-use TranslateUtils;
 
 /**
  * Script to export translations of message groups to files.
@@ -41,9 +40,27 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		);
 		$this->addOption(
 			'lang',
-			'Comma separated list of language codes or *',
+			'Comma separated list of language codes to export or * for all languages',
 			self::REQUIRED,
 			self::HAS_ARG
+		);
+		$this->addOption(
+			'always-export-languages',
+			'(optional) Comma separated list of languages to export ignoring export threshold',
+			self::OPTIONAL,
+			self::HAS_ARG
+		);
+		$this->addOption(
+			'never-export-languages',
+			'(optional) Comma separated list of languages to never export (overrides everything else)',
+			self::OPTIONAL,
+			self::HAS_ARG
+		);
+		$this->addOption(
+			'skip-source-language',
+			'(optional) Do not export the source language of each message group',
+			self::OPTIONAL,
+			self::NO_ARG
 		);
 		$this->addOption(
 			'target',
@@ -53,7 +70,7 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		);
 		$this->addOption(
 			'skip',
-			'(optional) Languages to skip, comma separated list',
+			'(deprecated) See --never-export-languages',
 			self::OPTIONAL,
 			self::HAS_ARG
 		);
@@ -76,12 +93,6 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 			self::HAS_ARG
 		);
 		$this->addOption(
-			'hours',
-			'(optional) Only export languages with changes in the last given number of hours',
-			self::OPTIONAL,
-			self::HAS_ARG
-		);
-		$this->addOption(
 			'no-fuzzy',
 			'(optional) Do not include any messages marked as fuzzy/outdated'
 		);
@@ -92,6 +103,12 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 			self::OPTIONAL,
 			self::HAS_ARG
 		);
+		$this->addOption(
+			'skip-group-sync-check',
+			'(optional) Skip exporting group if synchronization is still in progress or if there ' .
+				'was an error during synchronization. See: ' .
+				'https://www.mediawiki.org/wiki/Help:Extension:Translate/Group_management#Strong_synchronization'
+		);
 
 		$this->requireExtension( 'Translate' );
 	}
@@ -100,6 +117,7 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		$logger = LoggerFactory::getInstance( 'Translate.GroupSynchronization' );
 		$groupPattern = $this->getOption( 'group' ) ?? '';
 		$groupSkipPattern = $this->getOption( 'skipgroup' ) ?? '';
+		$skipGroupSyncCheck = $this->hasOption( 'skip-group-sync-check' );
 
 		$logger->info(
 			'Starting exports for groups {groups}',
@@ -115,12 +133,16 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		$exportThreshold = $this->getOption( 'threshold' );
 		$removalThreshold = $this->getOption( 'removal-threshold' );
 		$noFuzzy = $this->hasOption( 'no-fuzzy' );
-
-		$reqLangs = TranslateUtils::parseLanguageCodes( $this->getOption( 'lang' ) );
-		if ( $this->hasOption( 'skip' ) ) {
-			$skipLangs = array_map( 'trim', explode( ',', $this->getOption( 'skip' ) ) );
-			$reqLangs = array_diff( $reqLangs, $skipLangs );
-		}
+		$requestedLanguages = $this->parseLanguageCodes( $this->getOption( 'lang' ) );
+		$alwaysExportLanguages = $this->csv2array(
+			$this->getOption( 'always-export-languages' ) ?? ''
+		);
+		$neverExportLanguages = $this->csv2array(
+			$this->getOption( 'never-export-languages' ) ??
+			$this->getOption( 'skip' ) ??
+			''
+		);
+		$skipSourceLanguage = $this->hasOption( 'skip-source-language' );
 
 		$forOffline = $this->hasOption( 'offline-gettext-format' );
 		$offlineTargetPattern = $this->getOption( 'offline-gettext-format' ) ?: "%GROUPID%/%CODE%.po";
@@ -130,28 +152,25 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 			$this->fatalError( 'EE1: No valid message groups identified.' );
 		}
 
-		$changeFilter = null;
-		if ( $this->hasOption( 'hours' ) ) {
-			$changeFilter =	$this->getRecentlyChangedItems(
-				(int)$this->getOption( 'hours' ),
-				$this->getNamespacesForGroups( $groups )
-			);
-		}
+		$groupSyncCacheEnabled = MediaWikiServices::getInstance()->getMainConfig()
+			->get( 'TranslateGroupSynchronizationCache' );
+		$groupSyncCache = Services::getInstance()->getGroupSynchronizationCache();
 
 		foreach ( $groups as $groupId => $group ) {
-			// No changes to this group at all
-			if ( is_array( $changeFilter ) && !isset( $changeFilter[$groupId] ) ) {
-				$this->output( "No recent changes to $groupId.\n" );
-				continue;
+			if ( $groupSyncCacheEnabled && !$skipGroupSyncCheck ) {
+				if ( !$this->canGroupBeExported( $groupSyncCache, $groupId ) ) {
+					continue;
+				}
 			}
 
-			if ( $exportThreshold || $removalThreshold ) {
+			if ( $exportThreshold !== null || $removalThreshold !== null ) {
 				$logger->info( 'Calculating stats for group {groupId}', [ 'groupId' => $groupId ] );
 				$tStartTime = microtime( true );
 
 				$languageExportActions = $this->getLanguageExportActions(
 					$groupId,
-					$reqLangs,
+					$requestedLanguages,
+					$alwaysExportLanguages,
 					(int)$exportThreshold,
 					(int)$removalThreshold
 				);
@@ -165,8 +184,20 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 					]
 				);
 			} else {
-				// Convert list to an associate array
-				$languageExportActions = array_fill_keys( $reqLangs, self::ACTION_CREATE );
+				// Convert list to an associative array
+				$languageExportActions = array_fill_keys( $requestedLanguages, self::ACTION_CREATE );
+
+				foreach ( $alwaysExportLanguages as $code ) {
+					$languageExportActions[ $code ] = self::ACTION_CREATE;
+				}
+			}
+
+			foreach ( $neverExportLanguages as $code ) {
+				unset( $languageExportActions[ $code ] );
+			}
+
+			if ( $skipSourceLanguage ) {
+				unset( $languageExportActions[ $group->getSourceLanguage() ] );
 			}
 
 			if ( $languageExportActions === [] ) {
@@ -176,21 +207,25 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 			$this->output( "Exporting group $groupId\n" );
 			$logger->info( 'Exporting group {groupId}', [ 'groupId' => $groupId ] );
 
-			/** @var FileBasedMessageGroup $fileBasedGroup */
 			if ( $forOffline ) {
 				$fileBasedGroup = FileBasedMessageGroup::newFromMessageGroup( $group, $offlineTargetPattern );
 				$ffs = new GettextFFS( $fileBasedGroup );
 				$ffs->setOfflineMode( true );
 			} else {
 				$fileBasedGroup = $group;
-				$ffs = $group->getFFS();
+				// At this point $group should be an instance of FileBasedMessageGroup
+				// This is primarily to keep linting tools / IDE happy.
+				if ( !$fileBasedGroup instanceof FileBasedMessageGroup ) {
+					$this->fatalError( "EE2: Unexportable message group $groupId" );
+				}
+				$ffs = $fileBasedGroup->getFFS();
 			}
 
 			$ffs->setWritePath( $target );
 			$sourceLanguage = $group->getSourceLanguage();
 			$collection = $group->initCollection( $sourceLanguage );
 
-			$whitelist = $group->getTranslatableLanguages();
+			$inclusionList = $group->getTranslatableLanguages();
 
 			$langExportTimes = [
 				'collection' => 0,
@@ -201,15 +236,10 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 
 			$langStartTime = microtime( true );
 			foreach ( $languageExportActions as $lang => $action ) {
-				// Do not export languages that are blacklisted (or not whitelisted).
-				// Also check that whitelist is not null, which means that all
+				// Do not export languages that are excluded (or not included).
+				// Also check that inclusion list is not null, which means that all
 				// languages are allowed for translation and export.
-				if ( is_array( $whitelist ) && !isset( $whitelist[$lang] ) ) {
-					continue;
-				}
-
-				// Skip languages not present in recent changes
-				if ( is_array( $changeFilter ) && !isset( $changeFilter[$groupId][$lang] ) ) {
+				if ( is_array( $inclusionList ) && !isset( $inclusionList[$lang] ) ) {
 					continue;
 				}
 
@@ -294,17 +324,18 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 	): array {
 		$groupIds = MessageGroups::expandWildcards( explode( ',', trim( $groupPattern ) ) );
 		$groups = MessageGroups::getGroupsById( $groupIds );
+		if ( !$forOffline ) {
+			foreach ( $groups as $groupId => $group ) {
+				if ( $group->isMeta() ) {
+					$this->output( "Skipping meta message group $groupId.\n" );
+					unset( $groups[$groupId] );
+					continue;
+				}
 
-		foreach ( $groups as $groupId => $group ) {
-			if ( $group->isMeta() ) {
-				$this->output( "Skipping meta message group $groupId.\n" );
-				unset( $groups[$groupId] );
-				continue;
-			}
-
-			if ( !$forOffline && !$group instanceof FileBasedMessageGroup ) {
-				$this->output( "EE2: Unexportable message group $groupId.\n" );
-				unset( $groups[$groupId] );
+				if ( !$group instanceof FileBasedMessageGroup ) {
+					$this->output( "EE2: Unexportable message group $groupId.\n" );
+					unset( $groups[$groupId] );
+				}
 			}
 		}
 
@@ -319,47 +350,11 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		return $groups;
 	}
 
-	/**
-	 * @param int $hours
-	 * @param int[] $namespaces
-	 * @return array[]
-	 */
-	private function getRecentlyChangedItems( int $hours, array $namespaces ): array {
-		$bots = true;
-		$changeFilter = [];
-		$rows = TranslateUtils::translationChanges( $hours, $bots, $namespaces );
-		foreach ( $rows as $row ) {
-			$title = Title::makeTitle( $row->rc_namespace, $row->rc_title );
-			$handle = new MessageHandle( $title );
-			$code = $handle->getCode();
-			if ( !$code ) {
-				continue;
-			}
-			$groupIds = $handle->getGroupIds();
-			foreach ( $groupIds as $groupId ) {
-				$changeFilter[$groupId][$code] = true;
-			}
-		}
-
-		return $changeFilter;
-	}
-
-	/**
-	 * @param MessageGroup[] $groups
-	 * @return int[]
-	 */
-	private function getNamespacesForGroups( array $groups ): array {
-		$namespaces = [];
-		foreach ( $groups as $group ) {
-			$namespaces[$group->getNamespace()] = true;
-		}
-
-		return array_keys( $namespaces );
-	}
-
+	/** @return string[] */
 	private function getLanguageExportActions(
 		string $groupId,
 		array $requestedLanguages,
+		array $alwaysExportLanguages,
 		int $exportThreshold = 0,
 		int $removalThreshold = 0
 	): array {
@@ -386,6 +381,54 @@ class ExportTranslationsMaintenanceScript extends BaseMaintenanceScript {
 			}
 		}
 
+		foreach ( $alwaysExportLanguages as $code ) {
+			$languages[$code] = self::ACTION_CREATE;
+			// DWIM: Do not export languages with zero translations, even if requested
+			if ( ( $stats[$code][MessageGroupStats::TRANSLATED] ?? null ) === 0 ) {
+				$languages[$code] = self::ACTION_DELETE;
+			}
+		}
+
 		return $languages;
+	}
+
+	private function canGroupBeExported( GroupSynchronizationCache $groupSyncCache, string $groupId ): bool {
+		if ( $groupSyncCache->isGroupBeingProcessed( $groupId ) ) {
+			$this->error( "Group $groupId is currently being synchronized; skipping exports\n" );
+			return false;
+		}
+
+		if ( $groupSyncCache->groupHasErrors( $groupId ) ) {
+			$this->error( "Skipping $groupId due to synchronization error\n" );
+			return false;
+		}
+
+		if ( $groupSyncCache->isGroupInReview( $groupId ) ) {
+			$this->error( "Group $groupId is currently in review. Review changes on Special:ManageMessageGroups\n" );
+			return false;
+		}
+		return true;
+	}
+
+	/** @return string[] */
+	private function csv2array( string $input ): array {
+		return array_filter(
+			array_map( 'trim', explode( ',', $input ) ),
+			static function ( $v ) {
+				return $v !== '';
+			}
+		);
+	}
+
+	/** @return string[] */
+	private function parseLanguageCodes( string $input ): array {
+		if ( $input === '*' ) {
+			$languageNameUtils = MediaWikiServices::getInstance()->getLanguageNameUtils();
+			$languages = $languageNameUtils->getLanguageNames();
+			ksort( $languages );
+			return array_keys( $languages );
+		}
+
+		return $this->csv2array( $input );
 	}
 }

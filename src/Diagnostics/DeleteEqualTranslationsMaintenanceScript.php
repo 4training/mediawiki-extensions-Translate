@@ -5,13 +5,13 @@ namespace MediaWiki\Extension\Translate\Diagnostics;
 
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\Extension\Translate\Utilities\BaseMaintenanceScript;
+use MediaWiki\MediaWikiServices;
 use MessageCollection;
 use MessageGroups;
 use SplObjectStorage;
 use Title;
 use TitleValue;
 use TMessage;
-use WikiPage;
 use const SORT_NUMERIC;
 
 /**
@@ -62,7 +62,7 @@ class DeleteEqualTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		$equalMessageCount = count( $equalMessages );
 		if ( $equalMessageCount === 0 ) {
 			$this->output( "No translations equal to definition found\n" );
-			return true;
+			return;
 		}
 
 		$stats = $this->getUserStats( $equalMessages );
@@ -129,11 +129,12 @@ class DeleteEqualTranslationsMaintenanceScript extends BaseMaintenanceScript {
 
 	private function deleteMessages( SplObjectStorage $messages, string $reason ): void {
 		$user = FuzzyBot::getUser();
+		$wikiPageFactory = MediaWikiServices::getInstance()->getWikiPageFactory();
 
 		/** @var TitleValue $key */
 		foreach ( $messages as $key ) {
 			$title = Title::newFromLinkTarget( $key );
-			$page = WikiPage::factory( $title );
+			$page = $wikiPageFactory->newFromTitle( $title );
 			$status = $page->doDeleteArticleReal(
 				$reason,
 				$user
@@ -147,8 +148,3 @@ class DeleteEqualTranslationsMaintenanceScript extends BaseMaintenanceScript {
 		}
 	}
 }
-
-class_alias(
-	DeleteEqualTranslationsMaintenanceScript::class,
-	'\MediaWiki\Extensions\Translate\DeleteEqualTranslationsMaintenanceScript'
-);

@@ -16,6 +16,8 @@ interface PersistentCache {
 
 	public function hasExpiredEntry( string $keyname ): bool;
 
+	public function setExpiry( string $keyname, int $expiryTime ): void;
+
 	/** @return PersistentCacheEntry[] */
 	public function getByTag( string $tag ): array;
 
@@ -27,5 +29,3 @@ interface PersistentCache {
 
 	public function clear(): void;
 }
-
-class_alias( PersistentCache::class, '\MediaWiki\Extensions\Translate\PersistentCache' );

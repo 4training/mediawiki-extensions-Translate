@@ -1,7 +1,9 @@
 {
 	"@metadata": {
 		"authors": [
+			"MITO",
 			"Nike",
+			"Nwme",
 			"Pyscowicz",
 			"Valtlait"
 		]
@@ -26,6 +28,7 @@
 	"apihelp-query+messagecollection-example-1": "Palauttaa luettelon tuetuista kielistä",
 	"apihelp-query+messagegroups-example-1": "Näytä viestiryhmät",
 	"apihelp-query+messagegroupstats-param-group": "Viestiryhmän tunnus.",
+	"apihelp-query+messagegroupstats-param-suppressempty": "Älä näytä kieliä, joilla ei ole käännöksiä",
 	"apihelp-translatesandbox-param-do": "Mitä tehdä.",
 	"apihelp-translatesandbox-param-username": "Käyttäjimi käyttäjää luodessa",
 	"apihelp-translatesandbox-param-password": "Salasana käyttäjää luodessa",
@@ -45,7 +48,7 @@
 	"apihelp-translationcheck-param-translation": "Vahvistettavat käännökset.",
 	"apierror-translate-duplicateaggregategroup": "Viestiryhmä on jo olemassa",
 	"apierror-translate-invalidgroup": "Ryhmä ei ole olemassa tai se on virheellinen",
-	"apierror-translate-invalidlanguage": "Pyydetty kieli ei kelpaa.",
+	"apierror-translate-invalidlanguage": "Kielikoodi $1 ei ole kelvollinen.",
 	"apierror-translate-invalidupdate": "Virheellinen päivitys",
 	"apierror-translate-language-disabled": "Kääntäminen kielelle $1 ei ole mahdollista.",
 	"apierror-translate-language-disabled-reason": "Kääntäminen kielelle $1 ei ole mahdollista: $2",
@@ -55,5 +58,6 @@
 	"apierror-translate-sandboxdisabled": "Hiekkalaatikko-ominaisuus ei ole käytössä",
 	"apierror-translate-sandbox-invalidppassword": "Virheellinen salasana",
 	"apierror-translate-unknownmessage": "Tuntematon viesti",
-	"apiwarn-translate-language-disabled-source": "Tämän ryhmän lähdekieli on $1. Valitse toinen kieli käännöksille."
+	"apiwarn-translate-language-disabled-source": "Tämän ryhmän lähdekieli on $1. Valitse toinen kieli käännöksille.",
+	"apihelp-translationentitysearch-param-limit": "Hakutulosten maksimimäärä"
 }

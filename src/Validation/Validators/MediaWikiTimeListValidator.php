@@ -73,12 +73,9 @@ class MediaWikiTimeListValidator implements MessageValidator {
 				);
 
 				$issues->add( $issue );
-				continue;
 			}
 		}
 
 		return $issues;
 	}
 }
-
-class_alias( MediaWikiTimeListValidator::class, '\MediaWiki\Extensions\Translate\MediaWikiTimeListValidator' );

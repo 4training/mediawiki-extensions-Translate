@@ -19,7 +19,9 @@ if ( getenv( 'MW_INSTALL_PATH' ) !== false ) {
 require_once "$IP/maintenance/Maintenance.php";
 
 use MediaWiki\Extension\Translate\MessageSync\MessageSourceChange;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\Utilities\StringComparators\SimpleStringComparator;
+use MediaWiki\MediaWikiServices;
 
 /**
  * Script for processing message changes in file based message groups.
@@ -56,22 +58,49 @@ class ProcessMessageChanges extends Maintenance {
 		);
 		$this->addOption(
 			'safe-import',
-			'(optional) Import "safe" changes: message additions when no other kind of changes.',
-			false, /*required*/
-			false /*has arg*/
+			'(optional) Import "safe" changes: message additions when no other kind of changes.'
+		);
+		$this->addOption(
+			'skip-group-sync-check',
+			'(optional) Skip importing group if synchronization is still in progress or if there ' .
+				'was an error during synchronization. See: ' .
+				'https://www.mediawiki.org/wiki/Help:Extension:Translate/Group_management#Strong_synchronization'
 		);
 		$this->requireExtension( 'Translate' );
 	}
 
 	public function execute() {
+		$name = $this->getOption( 'name', MessageChangeStorage::DEFAULT_NAME );
+		if ( !MessageChangeStorage::isValidCdbName( $name ) ) {
+			$this->fatalError( 'Invalid name' );
+		}
+
 		$groups = $this->getGroups();
 		$changes = [];
 		$comparator = new ExternalMessageSourceStateComparator( new SimpleStringComparator() );
 
 		$scripted = $this->hasOption( 'safe-import' );
+		$skipGroupSyncCache = $this->hasOption( 'skip-group-sync-check' );
+
+		$services = Services::getInstance();
+		$groupSyncCache = $services->getGroupSynchronizationCache();
+		$groupSyncCacheEnabled = MediaWikiServices::getInstance()->getMainConfig()
+			->get( 'TranslateGroupSynchronizationCache' );
 
 		/** @var FileBasedMessageGroup $group */
 		foreach ( $groups as $id => $group ) {
+			if ( $groupSyncCacheEnabled && !$skipGroupSyncCache ) {
+				if ( $groupSyncCache->isGroupBeingProcessed( $id ) ) {
+					$this->error( "Group $id is currently being synchronized; skipping processing of changes\n" );
+					continue;
+				}
+
+				if ( $groupSyncCache->groupHasErrors( $id ) ) {
+					$this->error( "Skipping $id due to an error during synchronization\n" );
+					continue;
+				}
+			}
+
 			if ( !$scripted ) {
 				$this->output( "Processing $id\n" );
 			}
@@ -85,7 +114,7 @@ class ProcessMessageChanges extends Maintenance {
 		}
 
 		// Remove all groups without changes
-		$changes = array_filter( $changes, function ( MessageSourceChange $change ) {
+		$changes = array_filter( $changes, static function ( MessageSourceChange $change ) {
 			return $change->getAllModifications() !== [];
 		} );
 
@@ -98,16 +127,11 @@ class ProcessMessageChanges extends Maintenance {
 		}
 
 		if ( $scripted ) {
-			$importer = new ExternalMessageSourceStateImporter();
-			$info = $importer->importSafe( $changes );
+			$importer = $services->getExternalMessageSourceStateImporter();
+			$info = $importer->importSafe( $changes, $name );
 			$this->printChangeInfo( $info );
 
 			return;
-		}
-
-		$name = $this->getOption( 'name', MessageChangeStorage::DEFAULT_NAME );
-		if ( !MessageChangeStorage::isValidCdbName( $name ) ) {
-			$this->fatalError( 'Invalid name' );
 		}
 
 		$file = MessageChangeStorage::getCdbPath( $name );
@@ -141,7 +165,7 @@ class ProcessMessageChanges extends Maintenance {
 		$exclude = array_flip( $exclude );
 
 		$groups = array_filter( $groups,
-			function ( MessageGroup $group ) use ( $include, $exclude ) {
+			static function ( MessageGroup $group ) use ( $include, $exclude ) {
 				$id = $group->getId();
 
 				return isset( $include[$id] ) && !isset( $exclude[$id] );

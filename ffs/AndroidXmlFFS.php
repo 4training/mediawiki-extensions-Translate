@@ -7,6 +7,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\ArrayFlattener;
+
 /**
  * Support for XML translation format used by Android.
  * @since 2012-08-19
@@ -94,7 +96,7 @@ class AndroidXmlFFS extends SimpleFFS {
 		// Convert string of format \uNNNN (eg: \u1234) to symbols
 		$converted = preg_replace_callback(
 			'/(?<!\\\\)(?:\\\\{2})*+\\K\\\\u([0-9A-Fa-f]{4,6})+/',
-			function ( array $matches ) {
+			static function ( array $matches ) {
 				return IntlChar::chr( hexdec( $matches[1] ) );
 			},
 			$elementStr

@@ -109,7 +109,7 @@ class MessageGroupBaseTest extends MediaWikiIntegrationTestCase {
 		// Install a special permission when the group ID is matched.
 		$this->setTemporaryHook(
 			'Translate:modifyMessageGroupStates',
-			function ( $groupId, &$conf ) {
+			static function ( $groupId, &$conf ) {
 				if ( $groupId === 'test-id' ) {
 					// No users have this.
 					$conf['proofreading']['right'] = 'inobtanium';
@@ -195,6 +195,22 @@ class MessageGroupBaseTest extends MediaWikiIntegrationTestCase {
 			"should fetch the correct 'Insertables' when 'InsertablesSuggesters' " .
 			"are configured using the array configuration."
 		);
+	}
+
+	public function testGetManglers() {
+		$conf = $this->groupConfiguration;
+		$conf['MANGLER'] = [
+			'class' => 'StringMatcher',
+			'prefix' => 'msg-prefix-',
+			'patterns' => [ '*' ]
+		];
+		$this->group = MessageGroupBase::factory( $conf );
+
+		$manglers = $this->group->getMangler();
+		$this->assertNotNull( $manglers );
+
+		$key = $manglers->mangle( 'key' );
+		$this->assertEquals( 'msg-prefix-key', $key, 'message should be mangled as per configuration' );
 	}
 }
 

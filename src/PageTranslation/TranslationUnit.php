@@ -6,6 +6,7 @@ namespace MediaWiki\Extension\Translate\PageTranslation;
 use Html;
 use Language;
 use TMessage;
+use const PREG_SET_ORDER;
 
 /**
  * This class represents one translation unit in a translatable page.
@@ -16,10 +17,20 @@ use TMessage;
  */
 class TranslationUnit {
 	public const UNIT_MARKER_INVALID_CHARS = "_/\n<>";
+	public const NEW_UNIT_ID = '-1';
+	// Deprecated syntax. Example: <tvar|1>...</>
+	public const TVAR_OLD_SYNTAX_REGEX = '~<tvar\|([^>]+)>(.*?)</>~us';
+	// Current syntax. Example: <tvar name=1>...</tvar>
+	public const TVAR_NEW_SYNTAX_REGEX = <<<'REGEXP'
+~
+<tvar \s+ name \s* = \s*
+( ( ' (?<key1> [^']* ) ' ) | ( " (?<key2> [^"]* ) " ) | (?<key3> [^"'\s>]* ) )
+\s* > (?<value>.*?) </tvar \s* >
+~xusi
+REGEXP;
+
 	/** @var string Unit name */
 	public $id;
-	/** @var ?string New name of the unit, that will be saved to database. */
-	public $name = null;
 	/** @var string Unit text. */
 	public $text;
 	/** @var string Is this new, existing, changed or deleted unit. */
@@ -36,7 +47,19 @@ class TranslationUnit {
 	/** @var int Version number for the serialization. */
 	private $version = 1;
 	/** @var string[] List of properties to serialize. */
-	private static $properties = [ 'version', 'id', 'name', 'text', 'type', 'oldText', 'inline' ];
+	private static $properties = [ 'version', 'id', 'text', 'type', 'oldText', 'inline' ];
+
+	public function __construct(
+		string $text,
+		string $id = self::NEW_UNIT_ID,
+		string $type = 'new',
+		string $oldText = null
+	) {
+		$this->text = $text;
+		$this->id = $id;
+		$this->type = $type;
+		$this->oldText = $oldText;
+	}
 
 	public function setIsInline( bool $value ): void {
 		$this->inline = $value;
@@ -61,22 +84,28 @@ class TranslationUnit {
 
 	/** Returns the text with tvars replaces with placeholders */
 	public function getTextWithVariables(): string {
-		$re = '~<tvar\|([^>]+)>(.*?)</>~us';
+		$variableReplacements = [];
+		foreach ( $this->getVariables() as $variable ) {
+			$variableReplacements[$variable->getDefinition()] = $variable->getName();
+		}
 
-		return preg_replace( $re, '$\1', $this->text );
+		return strtr( $this->text, $variableReplacements );
 	}
 
 	/** Returns unit text with variables replaced. */
 	public function getTextForTrans(): string {
-		$re = '~<tvar\|([^>]+)>(.*?)</>~us';
+		$variableReplacements = [];
+		foreach ( $this->getVariables() as $variable ) {
+			$variableReplacements[$variable->getDefinition()] = $variable->getValue();
+		}
 
-		return preg_replace( $re, '\2', $this->text );
+		return strtr( $this->text, $variableReplacements );
 	}
 
 	/** Returns the unit text with updated or added unit marker */
 	public function getMarkedText(): string {
-		$id = $this->name ?? $this->id;
-		$header = "<!--T:{$id}-->";
+		$id = $this->id;
+		$header = "<!--T:$id-->";
 		$re = '~^(=+.*?=+\s*?$)~m';
 		$rep = "\\1 $header";
 		$count = 0;
@@ -99,15 +128,25 @@ class TranslationUnit {
 		return $this->oldText ?? $this->text;
 	}
 
-	/** Returns array of variables and their values defined on this unit */
+	/** @return TranslationVariable[] */
 	public function getVariables(): array {
-		$re = '~<tvar\|([^>]+)>(.*?)</>~us';
-		$matches = [];
-		preg_match_all( $re, $this->text, $matches, PREG_SET_ORDER );
 		$vars = [];
 
+		$matches = [];
+		preg_match_all( self::TVAR_OLD_SYNTAX_REGEX, $this->text, $matches, PREG_SET_ORDER );
 		foreach ( $matches as $m ) {
-			$vars['$' . $m[1]] = $m[2];
+			$vars[] = new TranslationVariable( $m[0], '$' . $m[1], $m[2] );
+		}
+
+		$matches = [];
+		preg_match_all( self::TVAR_NEW_SYNTAX_REGEX, $this->text, $matches, PREG_SET_ORDER );
+		foreach ( $matches as $m ) {
+			$vars[] = new TranslationVariable(
+				$m[0],
+				// Maximum of one of these is non-empty string
+				'$' . ( $m['key1'] . $m['key2'] . $m['key3'] ),
+				$m['value']
+			);
 		}
 
 		return $vars;
@@ -126,7 +165,8 @@ class TranslationUnit {
 	}
 
 	public static function unserializeFromArray( array $data ): self {
-		$unit = new self();
+		// Give dummy default text, will be overridden
+		$unit = new self( '' );
 		foreach ( self::$properties as $index => $property ) {
 			$unit->$property = $data[$index];
 		}
@@ -166,7 +206,12 @@ class TranslationUnit {
 			$content = Html::rawElement( $tag, $attributes, $content );
 		}
 
-		$content = strtr( $content, $this->getVariables() );
+		$variableReplacements = [];
+		foreach ( $this->getVariables() as $variable ) {
+			$variableReplacements[$variable->getName()] = $variable->getValue();
+		}
+
+		$content = strtr( $content, $variableReplacements );
 
 		// Allow wrapping this inside variables
 		$content = preg_replace(
@@ -176,5 +221,37 @@ class TranslationUnit {
 		);
 
 		return $content;
+	}
+
+	/** @return TranslationUnitIssue[] */
+	public function getIssues(): array {
+		$issues = $usedNames = [];
+		foreach ( $this->getVariables() as $variable ) {
+			$name = $variable->getName();
+			$pattern = '/^' . TranslatablePageInsertablesSuggester::NAME_PATTERN . '$/u';
+			if ( !preg_match( $pattern, $name ) ) {
+				// Key by name to avoid multiple issues of the same name
+				$issues[$name] = new TranslationUnitIssue(
+					TranslationUnitIssue::WARNING,
+					'tpt-validation-not-insertable',
+					[ wfEscapeWikiText( $name ) ]
+				);
+			}
+
+			$usedNames[ $name ][] = $variable->getValue();
+		}
+
+		foreach ( $usedNames as $name => $contents ) {
+			$uniqueValueCount = count( array_unique( $contents ) );
+			if ( $uniqueValueCount > 1 ) {
+				$issues[] = new TranslationUnitIssue(
+					TranslationUnitIssue::ERROR,
+					'tpt-validation-name-reuse',
+					[ wfEscapeWikiText( $name ) ]
+				);
+			}
+		}
+
+		return array_values( $issues );
 	}
 }

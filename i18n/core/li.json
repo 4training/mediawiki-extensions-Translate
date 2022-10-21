@@ -43,7 +43,6 @@
 	"translate-edit-warnings": "Waorsjoewinge euver ónjuuste euverzèttinge",
 	"translate-edit-tmmatch-source": "Brónteks veur euverzètting: $1",
 	"translate-edit-tmmatch": "$1% euvereinkóms",
-	"translate-use-suggestion": "Vervang de hujige euverzètting door dit veurstèl.",
 	"translate-edit-nopermission": "Doe mós euverzètrechte höbbe veur berichte de kónne euverzètte.",
 	"translate-edit-askpermission": "Krieg toustumming",
 	"exporttranslations": "Veur euverzèttinge oet",
@@ -89,5 +88,6 @@
 	"translate-tag-page-desc": "Euverzètting van de wikipagina [[$2|$1]] vanoet $3 ($4).",
 	"translate-sidebar-alltrans": "In anger spraoke",
 	"translations": "Alle euverzèttinge",
-	"translate-documentation-language": "Besjeidbesjrieving"
+	"translate-documentation-language": "Besjeidbesjrieving",
+	"tux-editor-message-tools-delete": "Sjaf eweg"
 }

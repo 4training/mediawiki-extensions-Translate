@@ -169,10 +169,6 @@ class TTMServerBootstrap extends Maintenance {
 			$server->setLogger( $this );
 		}
 
-		if ( $server->isFrozen() ) {
-			$this->fatalError( "The service is frozen, giving up." );
-		}
-
 		if ( $this->getOption( 'reindex', false ) ) {
 			// This doesn't do the update, just sets a flag to do it
 			$server->setDoReIndex();
@@ -264,17 +260,18 @@ class TTMServerBootstrap extends Maintenance {
 		$times[ 'trans' ] += microtime( true );
 		$times[ 'total' ] += microtime( true );
 
-		$debug = sprintf(
-			"Total %.1f s for %d items >> stats/init/trans %%: %d/%d/%d >> %.1f ms/item",
-			$times[ 'total' ],
-			$countItems,
-			$times[ 'stats'] / $times[ 'total' ] * 100,
-			$times[ 'init'] / $times[ 'total' ] * 100,
-			$times[ 'trans'] / $times[ 'total' ] * 100,
-			$times[ 'total' ] / $countItems * 1000
-		);
-
-		$this->logInfo( "Finished exporting $id. $debug\n" );
+		if ( $countItems !== 0 ) {
+			$debug = sprintf(
+				"Total %.1f s for %d items >> stats/init/trans %%: %d/%d/%d >> %.1f ms/item",
+				$times[ 'total' ],
+				$countItems,
+				$times[ 'stats'] / $times[ 'total' ] * 100,
+				$times[ 'init'] / $times[ 'total' ] * 100,
+				$times[ 'trans'] / $times[ 'total' ] * 100,
+				$times[ 'total' ] / $countItems * 1000
+			);
+			$this->logInfo( "Finished exporting $id. $debug\n" );
+		}
 	}
 
 	private function logInfo( string $text ) {
@@ -287,6 +284,11 @@ class TTMServerBootstrap extends Maintenance {
 		// Make sure all existing connections are dead,
 		// we can't use them in forked children.
 		MediaWiki\MediaWikiServices::resetChildProcessServices();
+		// Temporary workaround for https://phabricator.wikimedia.org/T258860.
+		// This script just moves data around, so skipping the message cache should not
+		// cause any major issues. Things like message documentation language name and
+		// main page name were being checked from the message cache and sometimes failing.
+		MediaWiki\MediaWikiServices::getInstance()->getMessageCache()->disable();
 	}
 
 	private function verifyChildStatus( int $pid, int $status ): bool {

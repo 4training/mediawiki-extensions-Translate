@@ -18,6 +18,7 @@ use MediaWiki\Extension\Translate\Validation\Validators\MediaWikiParameterValida
 use MediaWiki\Extension\Translate\Validation\Validators\MediaWikiPluralValidator;
 use MediaWiki\Extension\Translate\Validation\Validators\MediaWikiTimeListValidator;
 use MediaWiki\Extension\Translate\Validation\Validators\NewlineValidator;
+use MediaWiki\Extension\Translate\Validation\Validators\NotEmptyValidator;
 use MediaWiki\Extension\Translate\Validation\Validators\NumericalParameterValidator;
 use MediaWiki\Extension\Translate\Validation\Validators\PrintfValidator;
 use MediaWiki\Extension\Translate\Validation\Validators\PythonInterpolationValidator;
@@ -50,6 +51,7 @@ class ValidatorFactory {
 		'MediaWikiPlural' => MediaWikiPluralValidator::class,
 		'MediaWikiTimeList' => MediaWikiTimeListValidator::class,
 		'Newline' => NewlineValidator::class,
+		'NotEmpty' => NotEmptyValidator::class,
 		'NumericalParameter' => NumericalParameterValidator::class,
 		'Printf' => PrintfValidator::class,
 		'PythonInterpolation' => PythonInterpolationValidator::class,
@@ -91,13 +93,7 @@ class ValidatorFactory {
 			throw new InvalidArgumentException( "Could not find validator class - '$class'. " );
 		}
 
-		$validator = new $class( $params );
-
-		if ( $validator instanceof Validator ) {
-			return new LegacyValidatorAdapter( $validator );
-		}
-
-		return $validator;
+		return new $class( $params );
 	}
 
 	/**
@@ -114,5 +110,3 @@ class ValidatorFactory {
 		self::$validators[ $id ] = $ns . $validator;
 	}
 }
-
-class_alias( ValidatorFactory::class, '\MediaWiki\Extensions\Translate\ValidatorFactory' );

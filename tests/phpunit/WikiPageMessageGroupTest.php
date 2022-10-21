@@ -14,7 +14,7 @@ class WikiPageMessageGroupTest extends MediaWikiIntegrationTestCase {
 
 		$this->setTemporaryHook(
 			'TranslatePostInitGroups',
-			function ( &$list ) {
+			static function ( &$list ) {
 				$anotherPageMessageGroup = new WikiPageMessageGroup( 'anotherpageid', 'mypage' );
 				$anotherPageMessageGroup->setLabel( 'thelabel' ); // Example
 				$anotherPageMessageGroup->setNamespace( 5 ); // Example
@@ -28,7 +28,7 @@ class WikiPageMessageGroupTest extends MediaWikiIntegrationTestCase {
 		$this->setTemporaryHook( 'TranslateInitGroupLoaders', [] );
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 	}
 

@@ -36,7 +36,7 @@ class RegexInsertablesSuggester implements InsertablesSuggester {
 	protected $post = null;
 
 	/**
-	 * Constructur function
+	 * Constructor function
 	 * @param array|string $params If params is specified as a string, it is used as the regex.
 	 * Eg: "/\$[a-z0-9]+/". In this case `display` is the first value from the regex match.
 	 * `pre` is also the first value from the regex match, `post` is left empty.
@@ -92,14 +92,10 @@ class RegexInsertablesSuggester implements InsertablesSuggester {
 	}
 
 	public function getInsertables( string $text ): array {
-		$insertables = [];
-
 		$matches = [];
 		preg_match_all( $this->regex, $text, $matches, PREG_SET_ORDER );
 
-		$insertables = array_map( [ $this, 'mapInsertables' ], $matches );
-
-		return $insertables;
+		return array_map( [ $this, 'mapInsertables' ], $matches );
 	}
 
 	protected function mapInsertables( array $match ) {
@@ -126,5 +122,3 @@ class RegexInsertablesSuggester implements InsertablesSuggester {
 		return new Insertable( $displayVal, $preVal, $postVal );
 	}
 }
-
-class_alias( RegexInsertablesSuggester::class, '\MediaWiki\Extensions\Translate\RegexInsertablesSuggester' );

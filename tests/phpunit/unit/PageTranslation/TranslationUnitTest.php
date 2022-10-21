@@ -25,33 +25,23 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 	public function testGetMarkedText(
 		string $name, string $text, bool $inline, string $expected
 	) {
-		$section = new TranslationUnit();
-		$section->name = $name;
-		$section->text = $text;
+		$section = new TranslationUnit( $text, $name );
 		$section->setIsInline( $inline );
-
 		$output = $section->getMarkedText();
-
 		$this->assertEquals( $expected, $output );
 	}
 
 	/** @dataProvider providerTestGetTextWithVariables */
 	public function testGetTextWithVariables( string $text, string $expected ) {
-		$section = new TranslationUnit();
-		$section->text = $text;
-
+		$section = new TranslationUnit( $text );
 		$output = $section->getTextWithVariables();
-
 		$this->assertEquals( $expected, $output );
 	}
 
 	/** @dataProvider providerTestGetTextForTrans */
 	public function testGetTextForTrans( string $text, string $expected ) {
-		$section = new TranslationUnit();
-		$section->text = $text;
-
+		$section = new TranslationUnit( $text );
 		$output = $section->getTextForTrans();
-
 		$this->assertEquals( $expected, $output );
 	}
 
@@ -134,8 +124,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 		bool $inline,
 		string $expected
 	 ) {
-		$unit = new TranslationUnit();
-		$unit->text = $source;
+		$unit = new TranslationUnit( $source );
 		$unit->setIsInline( $inline );
 
 		$msg = null;
@@ -172,7 +161,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 		$inline = true;
 		$block = false;
 
-		yield [
+		yield 'language wrapping' => [
 			'Hello <tvar|abc>peter</>!',
 			null,
 			!$fuzzy,
@@ -180,7 +169,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			'<span lang="en-GB" dir="ltr" class="mw-content-ltr">Hello peter!</span>'
 		];
 
-		yield [
+		yield 'old translation variable syntax' => [
 			'Hello <tvar|abc>peter</>!',
 			'Hejsan $abc!',
 			!$fuzzy,
@@ -188,7 +177,55 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			'Hejsan peter!'
 		];
 
-		yield [
+		yield 'translation variable syntax without quotes' => [
+			'Hello <tvar name=abc>peter</tvar>!',
+			'Hejsan $abc!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter!'
+		];
+
+		yield 'translation variable syntax with double quotes' => [
+			'Hello <tvar name="abc">peter</tvar>!',
+			'Hejsan $abc!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter!'
+		];
+
+		yield 'translation variable syntax with single quotes' => [
+			'Hello <tvar name=\'abc\'>peter</tvar>!',
+			'Hejsan $abc!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter!'
+		];
+
+		yield 'translation variable syntax with spaces' => [
+			'Hello <tvar name =  abc   >peter</tvar>!',
+			'Hejsan $abc!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter!'
+		];
+
+		yield 'mixed variable syntax' => [
+			'Hello <tvar name=2>peter</tvar> and <tvar|1>peter</>!',
+			'Hejsan $1 and $2!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter and peter!'
+		];
+
+		yield 'special characters in variable name' => [
+			'Hello <tvar name=abc_123-АБВ$>peter</tvar>!',
+			'Hejsan $abc_123-АБВ$!',
+			!$fuzzy,
+			$inline,
+			'Hejsan peter!'
+		];
+
+		yield 'inline fuzzy wrapping' => [
 			'Hello <tvar|abc>peter</>!',
 			'Hejsan $abc!',
 			$fuzzy,
@@ -196,7 +233,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			'<span class="mw-translate-fuzzy">Hejsan peter!</span>'
 		];
 
-		yield [
+		yield 'block language wrapping' => [
 			'Hello <tvar|abc>peter</>!',
 			null,
 			!$fuzzy,
@@ -204,15 +241,15 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			"<div lang=\"en-GB\" dir=\"ltr\" class=\"mw-content-ltr\">\nHello peter!\n</div>"
 		];
 
-		yield [
-			'Hello <tvar|abc>peter</>!',
+		yield 'block variables' => [
+			'Hello <tvar name=abc>peter</tvar>!',
 			'Hejsan $abc!',
 			!$fuzzy,
 			$block,
 			'Hejsan peter!'
 		];
 
-		yield [
+		yield 'block fuzzy wrapping' => [
 			'Hello <tvar|abc>peter</>!',
 			'Hejsan $abc!',
 			$fuzzy,
@@ -220,7 +257,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			"<div class=\"mw-translate-fuzzy\">\nHejsan peter!\n</div>"
 		];
 
-		yield [
+		yield 'translation language in the source' => [
 			'{{TRANSLATIONLANGUAGE}}',
 			null,
 			!$fuzzy,
@@ -228,7 +265,7 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			'<span lang="en-GB" dir="ltr" class="mw-content-ltr">en-gb</span>'
 		];
 
-		yield [
+		yield 'translation language in the translation' => [
 			'{{TRANSLATIONLANGUAGE}}',
 			'{{TRANSLATIONLANGUAGE}}',
 			$fuzzy,
@@ -236,12 +273,67 @@ class TranslationUnitTest extends MediaWikiUnitTestCase {
 			'<span class="mw-translate-fuzzy">ar</span>'
 		];
 
-		yield [
+		yield 'translation language in a variable' => [
 			'Lang: <tvar|code>{{TRANSLATIONLANGUAGE}}</>',
 			'Lang: $code',
 			!$fuzzy,
 			$inline,
 			'Lang: ar'
+		];
+	}
+
+	/** @dataProvider providerTestGetIssues */
+	public function testGetIssues( $input, $expected ) {
+		// FIXME: How to avoid this? It's used by wfEscapeWikitext
+		global $wgEnableMagicLinks;
+		$wgEnableMagicLinks = [];
+
+		$unit = new TranslationUnit( $input );
+		$issues = $unit->getIssues();
+		$actual = array_map( static function ( $x ) {
+			return $x->getKey();
+		}, $issues );
+		$this->assertArrayEquals( $expected, $actual );
+	}
+
+	public function providerTestGetIssues() {
+		// We are testing the message keys here to document the checks.
+		// Severity is left untested to allow changing them easily.
+		yield 'no variables - no issues' => [
+			'Bunny guarding the garden',
+			[],
+		];
+
+		yield 'ok variable name - no issues' => [
+			'<tvar name=name>Bunny</tvar> guarding the garden',
+			[],
+		];
+
+		yield 'bad insertable variable name' => [
+			'Information about carrots: <tvar name=wp.org>https://en.wikipedia.org/wiki/carrot</tvar>',
+			[ 'tpt-validation-not-insertable' ],
+		];
+
+		yield 'multiple names get separate issues' => [
+			'<tvar name="1/2">first half</tvar><tvar name="2/2">second half</tvar>',
+			[ 'tpt-validation-not-insertable', 'tpt-validation-not-insertable' ],
+		];
+
+		yield 'single repeated name only has one issue' => [
+			'<tvar name="1/1">whole</tvar><tvar name="1/1">whole</tvar>',
+			[ 'tpt-validation-not-insertable' ],
+		];
+
+		yield 'name reuse okay\'ish with same content' => [
+			'The parameter’s value is {{#if:<tvar name="1">{{{param|}}}</tvar>|' .
+				'<tvar name="1">{{{param|}}}</tvar>|not specified}}.',
+			[],
+		];
+
+		yield 'name reuse not okay with different content' => [
+			'Allowed values <tvar name=1>snake</tvar> and <tvar name=2>alligator</tvar>. ' .
+				'When using <tvar name=1>cobra</tvar> you may hear a hissing sound.',
+			[ 'tpt-validation-name-reuse' ],
 		];
 	}
 }

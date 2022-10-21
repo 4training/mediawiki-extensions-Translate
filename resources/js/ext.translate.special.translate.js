@@ -1,7 +1,9 @@
 ( function () {
 	'use strict';
 
-	var state = {
+	var state, hideOptionalMessages = '!optional';
+
+	state = {
 		group: null,
 		language: null,
 		messageList: null
@@ -18,15 +20,13 @@
 		 * @param {Object} group a message group object.
 		 */
 		changeGroup: function ( group ) {
-			var changes;
-
 			if ( !checkDirty() ) {
 				return;
 			}
 
 			state.group = group.id;
 
-			changes = {
+			var changes = {
 				group: group.id,
 				showMessage: null
 
@@ -51,8 +51,8 @@
 			mw.translate.updateTabLinks( changes );
 			$( '.tux-editor-header .group-warning' ).empty();
 			state.messageList.changeSettings( changes );
+			state.groupSelector.updateTargetLanguage( language );
 			updateGroupInformation( state );
-
 		},
 
 		changeFilter: function ( filter ) {
@@ -76,6 +76,8 @@
 				}
 			} );
 
+			mw.hook( 'mw.translate.translationView.stateChange' ).fire( state );
+
 			if ( uri.toString() === window.location.href ) {
 				return;
 			}
@@ -98,10 +100,8 @@
 		 */
 		updateTabLinks: function ( params ) {
 			$( '.tux-tab a' ).each( function () {
-				var $a, uri;
-
-				$a = $( this );
-				uri = new mw.Uri( $a.prop( 'href' ) );
+				var $a = $( this );
+				var uri = new mw.Uri( $a.prop( 'href' ) );
 				uri.extend( params );
 				$a.prop( 'href', uri.toString() );
 			} );
@@ -109,12 +109,10 @@
 	} );
 
 	function getActualFilter( filter ) {
-		var realFilters, uri;
-
-		realFilters = [ '!ignored' ];
-		uri = new mw.Uri( window.location.href );
+		var realFilters = [ '!ignored' ];
+		var uri = new mw.Uri( window.location.href );
 		if ( uri.query.optional !== '1' ) {
-			realFilters.push( '!optional' );
+			realFilters.push( hideOptionalMessages );
 		}
 		if ( filter ) {
 			realFilters.push( filter );
@@ -148,7 +146,7 @@
 	 * @param {string} stateInfo.language Language.
 	 */
 	function updateGroupInformation( stateInfo ) {
-		var props = 'id|priority|prioritylangs|priorityforce|description';
+		var props = 'id|priority|prioritylangs|priorityforce|description|label|sourcelanguage|class';
 
 		mw.translate.recentGroups.append( stateInfo.group );
 
@@ -167,8 +165,24 @@
 			$description.empty();
 			return;
 		}
+		var description = group.description;
+		if (
+			group.class === 'WikiPageMessageGroup' &&
+			group.sourcelanguage !== state.language &&
+			// Message documentation does not have a translation page
+			state.language !== mw.config.get( 'wgTranslateDocumentationLanguageCode' )
+		) {
+			description = mw.msg(
+				'translate-tag-page-wikipage-desc',
+				':' + group.label + '/' + state.language,
+				':' + group.label,
+				$.uls.data.getAutonym( group.sourcelanguage ),
+				group.sourcelanguage,
+				$.uls.data.getAutonym( state.language ),
+				state.language );
+		}
 
-		api.parse( group.description ).done( function ( parsedDescription ) {
+		api.parse( description ).done( function ( parsedDescription ) {
 			// The parsed text is returned in a <p> tag,
 			// so it's removed here.
 			$description.html( parsedDescription );
@@ -179,15 +193,24 @@
 	}
 
 	function updateGroupWarning( group, language ) {
-		var $preferredLanguages, headerMessage, languagesMessage,
-			$groupWarning = $( '.tux-editor-header .group-warning' );
+		var $groupWarning = $( '.tux-editor-header .group-warning' );
+
+		if ( group.priority === 'discouraged' ) {
+			$groupWarning.append(
+				$( '<p>' ).append( $( '<strong>' )
+					.text( mw.message( 'tpt-discouraged-translation-header' ).text() )
+				),
+				$( '<p>' ).append( mw.message( 'tpt-discouraged-translation-content' ).parseDom() )
+			);
+			return;
+		}
 
 		if ( !group.prioritylangs || isPriorityLanguage( language, group.prioritylangs ) ) {
 			return;
 		}
 
 		// Make a comma-separated list of preferred languages
-		$preferredLanguages = $( '<span>' );
+		var $preferredLanguages = $( '<span>' );
 		group.prioritylangs.forEach( function ( languageCode, index ) {
 			// bidi isolation for language names
 			$preferredLanguages.append(
@@ -200,6 +223,7 @@
 			}
 		} );
 
+		var headerMessage, languagesMessage;
 		if ( group.priorityforce ) {
 			headerMessage = mw.message(
 				'tpt-discouraged-language-force-header',
@@ -248,9 +272,16 @@
 		var ulsOptions = {
 			languages: mw.config.get( 'wgTranslateLanguages' ),
 			showRegions: [ 'SP' ].concat( $.fn.lcd.defaults.showRegions ),
-			onSelect: function ( language ) {
-				mw.translate.changeLanguage( language );
-				$element.text( $.uls.data.getAutonym( language ) );
+			onSelect: function ( languageCode ) {
+				var languageDetails = mw.translate.getLanguageDetailsForHtml( languageCode );
+				mw.translate.changeLanguage( languageCode );
+				$element
+					.find( '.ext-translate-target-language' )
+					.text( languageDetails.autonym )
+					.prop( {
+						lang: languageDetails.code,
+						dir: languageDetails.direction
+					} );
 			},
 			ulsPurpose: 'translate-special-translate',
 			quickList: function () {
@@ -263,10 +294,7 @@
 	}
 
 	$( function () {
-		var $translateContainer, $hideTranslatedButton, $messageList,
-			filter, uri, position, offset, limit;
-
-		$messageList = $( '.tux-messagelist' );
+		var $messageList = $( '.tux-messagelist' );
 		state.group = $( '.tux-messagetable-loader' ).data( 'messagegroup' );
 		state.language = $messageList.data( 'targetlangcode' );
 
@@ -274,9 +302,10 @@
 			$messageList.messagetable();
 			state.messageList = $messageList.data( 'messagetable' );
 
-			uri = new mw.Uri( window.location.href );
-			filter = uri.query.filter;
-			offset = uri.query.showMessage;
+			var uri = new mw.Uri( window.location.href );
+			var filter = uri.query.filter;
+			var offset = uri.query.showMessage;
+			var limit;
 			if ( offset ) {
 				limit = uri.query.limit || 1;
 				// Default to no filters
@@ -304,15 +333,21 @@
 			} );
 
 			// Start loading messages
+			var actualFilter = getActualFilter( filter );
 			state.messageList.changeSettings( {
 				group: state.group,
 				language: state.language,
 				offset: offset,
 				limit: limit,
-				filter: getActualFilter( filter )
+				filter: actualFilter
 			} );
+
+			if ( actualFilter.indexOf( hideOptionalMessages ) === -1 ) {
+				$( '#tux-option-optional' ).prop( 'checked', true );
+			}
 		}
 
+		var position;
 		if ( $( document.body ).hasClass( 'rtl' ) ) {
 			position = {
 				my: 'right top',
@@ -325,6 +360,7 @@
 			position: position,
 			recent: mw.translate.recentGroups.get()
 		} );
+		state.groupSelector = $( '.tux-breadcrumb__item--aggregate' ).data( 'msggroupselector' );
 
 		updateGroupInformation( state );
 
@@ -334,6 +370,8 @@
 				setupLanguageSelector( $target );
 				$target.trigger( 'click' );
 			} );
+		} ).on( 'keypress', function () {
+			$( this ).trigger( 'click' );
 		} );
 
 		if ( $.fn.translateeditor ) {
@@ -341,13 +379,13 @@
 			$( '.tux-message' ).translateeditor();
 		}
 
-		$translateContainer = $( '.ext-translate-container' );
+		var $translateContainer = $( '.ext-translate-container' );
 
 		if ( mw.translate.canProofread() ) {
 			$translateContainer.find( '.proofread-mode-button' ).removeClass( 'hide' );
 		}
 
-		$hideTranslatedButton = $translateContainer.find( '.tux-editor-clear-translated' );
+		var $hideTranslatedButton = $translateContainer.find( '.tux-editor-clear-translated' );
 		$hideTranslatedButton
 			.prop( 'disabled', !getTranslatedMessages( $translateContainer ).length )
 			.on( 'click', function () {
@@ -357,14 +395,13 @@
 
 		// Message filter click handler
 		$translateContainer.find( '.row.tux-message-selector > li' ).on( 'click', function () {
-			var newFilter,
-				$this = $( this );
+			var $this = $( this );
 
 			if ( $this.hasClass( 'more' ) ) {
 				return false;
 			}
 
-			newFilter = $this.data( 'filter' );
+			var newFilter = $this.data( 'filter' );
 
 			// Remove the 'selected' class from all the items.
 			// Some of them could have been moved to under the "more" menu,

@@ -10,6 +10,8 @@
  */
 
 use CLDRPluralRuleParser\Evaluator;
+use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\MediaWikiServices;
 
 // Standard boilerplate to define $IP
 if ( getenv( 'MW_INSTALL_PATH' ) !== false ) {
@@ -31,7 +33,9 @@ class PluralCompare extends Maintenance {
 		$gtLanguages = $this->loadGettext();
 		$clLanguages = $this->loadCLDR();
 
-		$all = Language::fetchLanguageNames( null, 'all' );
+		$all = MediaWikiServices::getInstance()
+			->getLanguageNameUtils()
+			->getLanguageNames( null, LanguageNameUtils::ALL );
 		$allkeys = array_keys( $all + $mwLanguages + $gtLanguages + $clLanguages );
 		sort( $allkeys );
 
@@ -73,11 +77,7 @@ class PluralCompare extends Maintenance {
 			$gtExp = false;
 		}
 
-		if ( isset( $clLanguages[$code] ) ) {
-			$cldrExp = $clLanguages[$code];
-		} else {
-			$cldrExp = false;
-		}
+		$cldrExp = $clLanguages[$code] ?? false;
 
 		for ( $i = 0; $i <= 250; $i++ ) {
 			$mw = $gt = $cl = '?';

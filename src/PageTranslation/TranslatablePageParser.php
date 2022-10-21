@@ -34,12 +34,13 @@ class TranslatablePageParser {
 		$text = $this->armourNowiki( $nowiki, $text );
 		$text = preg_replace( '~<translate( nowrap)?>\n?~s', '', $text );
 		$text = preg_replace( '~\n?</translate>~s', '', $text );
-		// Mirroring what TranslationUnit::getTextForTrans does
-		$text = preg_replace( '~<tvar\|([^>]+)>(.*?)</>~u', '\2', $text );
 		// Markers: headers and the rest
 		$ic = preg_quote( TranslationUnit::UNIT_MARKER_INVALID_CHARS, '~' );
 		$text = preg_replace( "~(^=.*=) <!--T:[^$ic]+-->$~um", '\1', $text );
 		$text = preg_replace( "~<!--T:[^$ic]+-->[\n ]?~um", '', $text );
+		// Remove variables
+		$unit = new TranslationUnit( $text );
+		$text = $unit->getTextForTrans();
 
 		$text = $this->unarmourNowiki( $nowiki, $text );
 		return $text;
@@ -103,7 +104,7 @@ class TranslatablePageParser {
 			);
 		} elseif ( strpos( $text, '</translate>' ) !== false ) {
 			throw new ParsingFailure(
-				"Unmmatched closing tag",
+				"Unmatched closing tag",
 				[ 'pt-parse-close', $prettyTemplate ]
 			);
 		}
@@ -165,11 +166,11 @@ class TranslatablePageParser {
 			);
 		}
 
-		$section = new TranslationUnit();
+		// If no id given in the source, default to a new section id
+		$id = TranslationUnit::NEW_UNIT_ID;
 		if ( $count === 1 ) {
 			foreach ( $matches as $match ) {
 				[ /*full*/, $id ] = $match;
-				$section->id = $id;
 
 				// Currently handle only these two standard places.
 				// Is this too strict?
@@ -190,14 +191,9 @@ class TranslatablePageParser {
 					);
 				}
 			}
-		} else {
-			// New section
-			$section->id = -1;
 		}
 
-		$section->text = $content;
-
-		return $section;
+		return new TranslationUnit( $content, $id );
 	}
 
 	/** @internal */
@@ -218,5 +214,3 @@ class TranslatablePageParser {
 		return strtr( $text, $holders );
 	}
 }
-
-class_alias( TranslatablePageParser::class, '\MediaWiki\Extensions\Translate\TranslatablePageParser' );

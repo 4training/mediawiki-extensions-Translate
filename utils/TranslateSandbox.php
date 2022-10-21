@@ -11,6 +11,7 @@ use MediaWiki\Auth\AuthenticationRequest;
 use MediaWiki\Auth\AuthenticationResponse;
 use MediaWiki\Auth\AuthManager;
 use MediaWiki\Extension\Translate\SystemUsers\TranslateUserManager;
+use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashActionApi;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\ScopedCallback;
 
@@ -31,7 +32,7 @@ class TranslateSandbox {
 	public static function addUser( $name, $email, $password ) {
 		$user = User::newFromName( $name, 'creatable' );
 
-		if ( !$user instanceof User ) {
+		if ( !$user ) {
 			throw new MWException( 'Invalid user name' );
 		}
 
@@ -43,16 +44,13 @@ class TranslateSandbox {
 			'realname' => '',
 		];
 
-		$permissionManager = MediaWikiServices::getInstance()->getPermissionManager();
+		$services = MediaWikiServices::getInstance();
+
+		$permissionManager = $services->getPermissionManager();
 		$creator = TranslateUserManager::getUser();
 		$guard = $permissionManager->addTemporaryUserRights( $creator, 'createaccount' );
 
-		if ( method_exists( MediaWikiServices::class, 'getAuthManager' ) ) {
-			// MediaWiki 1.35+
-			$authManager = MediaWikiServices::getInstance()->getAuthManager();
-		} else {
-			$authManager = AuthManager::singleton();
-		}
+		$authManager = $services->getAuthManager();
 		$reqs = $authManager->getAuthenticationRequests( AuthManager::ACTION_CREATE );
 		$reqs = AuthenticationRequest::loadRequestsFromSubmission( $reqs, $data );
 		$res = $authManager->beginAccountCreation( $creator, $reqs, 'null:' );
@@ -81,12 +79,7 @@ class TranslateSandbox {
 		}
 
 		// group-translate-sandboxed group-translate-sandboxed-member
-		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
-			// MediaWiki 1.35+
-			MediaWikiServices::getInstance()->getUserGroupManager()->addUserToGroup( $user, 'translate-sandboxed' );
-		} else {
-			$user->addGroup( 'translate-sandboxed' );
-		}
+		$services->getUserGroupManager()->addUserToGroup( $user, 'translate-sandboxed' );
 
 		return $user;
 	}
@@ -100,22 +93,23 @@ class TranslateSandbox {
 	 */
 	public static function deleteUser( User $user, $force = '' ) {
 		$uid = $user->getId();
+		$actorId = $user->getActorId();
 
 		if ( $force !== 'force' && !self::isSandboxed( $user ) ) {
 			throw new MWException( 'Not a sandboxed user' );
 		}
 
 		// Delete from database
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$dbw->delete( 'user', [ 'user_id' => $uid ], __METHOD__ );
 		$dbw->delete( 'user_groups', [ 'ug_user' => $uid ], __METHOD__ );
 		$dbw->delete( 'user_properties', [ 'up_user' => $uid ], __METHOD__ );
 
-		$m = ActorMigration::newMigration();
-		$dbw->delete( 'actor', [ 'actor_user' => $uid ], __METHOD__ );
+		MediaWikiServices::getInstance()->getActorStore()->deleteActor( $user, $dbw );
+
 		// Assume no joins are needed for logging or recentchanges
-		$dbw->delete( 'logging', $m->getWhere( $dbw, 'log_user', $user )['conds'], __METHOD__ );
-		$dbw->delete( 'recentchanges', $m->getWhere( $dbw, 'rc_user', $user )['conds'], __METHOD__ );
+		$dbw->delete( 'logging', [ 'log_actor' => $actorId ], __METHOD__ );
+		$dbw->delete( 'recentchanges', [ 'rc_actor' => $actorId ], __METHOD__ );
 
 		// Update the site stats
 		$statsUpdate = SiteStatsUpdate::factory( [ 'users' => -1 ] );
@@ -128,16 +122,6 @@ class TranslateSandbox {
 		// Nobody should access the user by id anymore, but in case they do, purge
 		// the cache so they wont get stale data
 		$user->invalidateCache();
-
-		// In case we create an user with same name as was deleted during the same
-		// request, we must also reset this cache or the User class will try to load
-		// stuff for the old id, which is no longer present since we just deleted
-		// the cache above. But it would have the side effect or overwriting all
-		// member variables with null data. This used to manifest as a bug where
-		// inserting a new user fails because the mName properpty is set to null,
-		// which is then converted as the ip of the current user, and trying to
-		// add that twice results in a name conflict. It was fun to debug.
-		User::resetIdByNameCache();
 	}
 
 	/**
@@ -173,24 +157,18 @@ class TranslateSandbox {
 			throw new MWException( 'Not a sandboxed user' );
 		}
 
-		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
-			// MediaWiki 1.35+
-			$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
-			$userGroupManager->removeUserFromGroup( $user, 'translate-sandboxed' );
+		$services = MediaWikiServices::getInstance();
 
-			if ( $wgTranslateSandboxPromotedGroup ) {
-				$userGroupManager->addUserToGroup( $user, $wgTranslateSandboxPromotedGroup );
-			}
-		} else {
-			$user->removeGroup( 'translate-sandboxed' );
+		$userGroupManager = $services->getUserGroupManager();
+		$userGroupManager->removeUserFromGroup( $user, 'translate-sandboxed' );
 
-			if ( $wgTranslateSandboxPromotedGroup ) {
-				$user->addGroup( $wgTranslateSandboxPromotedGroup );
-			}
+		if ( $wgTranslateSandboxPromotedGroup ) {
+			$userGroupManager->addUserToGroup( $user, $wgTranslateSandboxPromotedGroup );
 		}
 
-		$user->setOption( 'translate-sandbox-reminders', '' );
-		$user->saveSettings();
+		$userOptionsManager = $services->getUserOptionsManager();
+		$userOptionsManager->setOption( $user, 'translate-sandbox-reminders', '' );
+		$userOptionsManager->saveOptions( $user );
 	}
 
 	/**
@@ -204,7 +182,8 @@ class TranslateSandbox {
 	public static function sendEmail( User $sender, User $target, $type ) {
 		global $wgNoReplyAddress;
 
-		$targetLang = $target->getOption( 'language' );
+		$userOptionsLookup = MediaWikiServices::getInstance()->getUserOptionsLookup();
+		$targetLang = $userOptionsLookup->getOption( $target, 'language' );
 
 		switch ( $type ) {
 			case 'reminder':
@@ -251,7 +230,17 @@ class TranslateSandbox {
 			'emailType' => $type,
 		];
 
-		JobQueueGroup::singleton()->push( TranslateSandboxEmailJob::newJob( $params ) );
+		$services = MediaWikiServices::getInstance();
+		$userOptionsManager = $services->getUserOptionsManager();
+
+		$reminders = $userOptionsManager->getOption( $target, 'translate-sandbox-reminders' );
+		$reminders = $reminders ? explode( '|', $reminders ) : [];
+		$reminders[] = wfTimestamp();
+
+		$userOptionsManager->setOption( $target, 'translate-sandbox-reminders', implode( '|', $reminders ) );
+		$userOptionsManager->saveOptions( $target );
+
+		$services->getJobQueueGroup()->push( TranslateSandboxEmailJob::newJob( $params ) );
 	}
 
 	/**
@@ -261,15 +250,8 @@ class TranslateSandbox {
 	 * @since 2013.06
 	 */
 	public static function isSandboxed( User $user ) {
-		if ( method_exists( MediaWikiServices::class, 'getUserGroupManager' ) ) {
-			// MediaWiki 1.35+
-			$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
-			$groups = $userGroupManager->getUserGroups( $user );
-		} else {
-			$groups = $user->getGroups();
-		}
-
-		return in_array( 'translate-sandboxed', $groups, true );
+		$userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
+		return in_array( 'translate-sandboxed', $userGroupManager->getUserGroups( $user ), true );
 	}
 
 	/**
@@ -313,7 +295,7 @@ class TranslateSandbox {
 	}
 
 	/**
-	 * Whitelisting for certain API modules. See also enforcePermissions.
+	 * Inclusion listing for certain API modules. See also enforcePermissions.
 	 * Hook: ApiCheckCanExecute
 	 * @param ApiBase $module
 	 * @param User $user
@@ -321,16 +303,16 @@ class TranslateSandbox {
 	 * @return bool
 	 */
 	public static function onApiCheckCanExecute( ApiBase $module, User $user, &$message ) {
-		$whitelist = [
+		$inclusionList = [
 			// Obviously this is needed to get out of the sandbox
-			'ApiTranslationStash',
+			TranslationStashActionApi::class,
 			// Used by UniversalLanguageSelector for example
 			'ApiOptions'
 		];
 
 		if ( self::isSandboxed( $user ) ) {
 			$class = get_class( $module );
-			if ( $module->isWriteMode() && !in_array( $class, $whitelist, true ) ) {
+			if ( $module->isWriteMode() && !in_array( $class, $inclusionList, true ) ) {
 				$message = ApiMessage::create( 'apierror-writeapidenied' );
 				return false;
 			}

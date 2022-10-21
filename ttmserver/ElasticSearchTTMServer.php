@@ -8,6 +8,17 @@
  * @ingroup TTMServer
  */
 
+use Elastica\Aggregation\Terms;
+use Elastica\Client;
+use Elastica\Document;
+use Elastica\Exception\ExceptionInterface;
+use Elastica\Query;
+use Elastica\Query\BoolQuery;
+use Elastica\Query\FunctionScore;
+use Elastica\Query\MatchQuery;
+use Elastica\Query\Term;
+use MediaWiki\Extension\Elastica\MWElasticUtils;
+use MediaWiki\Extension\Translate\TranslatorInterface\TranslationHelperException;
 use MediaWiki\Logger\LoggerFactory;
 
 /**
@@ -33,19 +44,7 @@ class ElasticSearchTTMServer
 	 */
 	private const WAIT_UNTIL_READY_TIMEOUT = 3600;
 
-	/**
-	 * Flag in the frozen index that indicates that all indices
-	 * are frozen (useful only when this service shares the cluster with
-	 * CirrusSearch)
-	 */
-	protected const ALL_INDEXES_FROZEN_NAME = 'freeze_everything';
-
-	/**
-	 * Type used in the frozen index
-	 */
-	protected const FROZEN_TYPE = 'frozen';
-
-	/** @var \Elastica\Client */
+	/** @var Client */
 	protected $client;
 	/**
 	 * Reference to the maintenance script to relay logging output.
@@ -57,7 +56,7 @@ class ElasticSearchTTMServer
 	protected $updateMapping = false;
 
 	public function isLocalSuggestion( array $suggestion ) {
-		return $suggestion['wiki'] === wfWikiID();
+		return $suggestion['wiki'] === WikiMap::getCurrentWikiId();
 	}
 
 	public function expandLocation( array $suggestion ) {
@@ -76,7 +75,7 @@ class ElasticSearchTTMServer
 		if ( !$this->useWikimediaExtraPlugin() ) {
 			// ElasticTTM is currently not compatible with elasticsearch 2.x/5.x
 			// It needs FuzzyLikeThis ported via the wmf extra plugin
-			throw new \RuntimeException( 'The wikimedia extra plugin is mandatory.' );
+			throw new RuntimeException( 'The wikimedia extra plugin is mandatory.' );
 		}
 		/* Two query system:
 		 * 1) Find all strings in source language that match text
@@ -90,7 +89,7 @@ class ElasticSearchTTMServer
 		$fuzzyQuery->setLikeText( $text );
 		$fuzzyQuery->addFields( [ 'content' ] );
 
-		$boostQuery = new \Elastica\Query\FunctionScore();
+		$boostQuery = new FunctionScore();
 		$boostQuery->addFunction(
 			'levenshtein_distance_score',
 			[
@@ -98,20 +97,20 @@ class ElasticSearchTTMServer
 				'field' => 'content'
 			]
 		);
-		$boostQuery->setBoostMode( \Elastica\Query\FunctionScore::BOOST_MODE_REPLACE );
+		$boostQuery->setBoostMode( FunctionScore::BOOST_MODE_REPLACE );
 
 		// Wrap the fuzzy query so it can be used as a filter.
 		// This is slightly faster, as ES can throw away the scores by this query.
-		$bool = new \Elastica\Query\BoolQuery();
+		$bool = new BoolQuery();
 		$bool->addFilter( $fuzzyQuery );
 		$bool->addMust( $boostQuery );
 
-		$languageFilter = new \Elastica\Query\Term();
+		$languageFilter = new Term();
 		$languageFilter->setTerm( 'language', $sourceLanguage );
 		$bool->addFilter( $languageFilter );
 
 		// The whole query
-		$query = new \Elastica\Query();
+		$query = new Query();
 		$query->setQuery( $bool );
 
 		// The interface usually displays three best candidates. These might
@@ -130,7 +129,7 @@ class ElasticSearchTTMServer
 		$query->setParam( '_source', [ 'content' ] );
 		$cutoff = $this->config['cutoff'] ?? 0.65;
 		$query->setParam( 'min_score', $cutoff );
-		$query->setSort( [ '_score', '_uid' ] );
+		$query->setSort( [ '_score', 'wiki', 'localid' ] );
 
 		/* This query is doing two unrelated things:
 		 * 1) Collect the message contents and scores so that they can
@@ -139,7 +138,7 @@ class ElasticSearchTTMServer
 		 */
 		$contents = $scores = $terms = [];
 		do {
-			$resultset = $this->getType()->search( $query );
+			$resultset = $this->getIndex()->search( $query );
 
 			if ( count( $resultset ) === 0 ) {
 				break;
@@ -184,13 +183,12 @@ class ElasticSearchTTMServer
 		// Skip second query if first query found nothing. Keeping only one return
 		// statement in this method to avoid forgetting to reset connection timeout
 		if ( $terms !== [] ) {
-			$idQuery = new \Elastica\Query\Terms();
-			$idQuery->setTerms( '_id', $terms );
+			$idQuery = new Query\Terms( '_id', $terms );
 
-			$query = new \Elastica\Query( $idQuery );
+			$query = new Query( $idQuery );
 			$query->setSize( 25 );
 			$query->setParam( '_source', [ 'wiki', 'uri', 'content', 'localid' ] );
-			$resultset = $this->getType()->search( $query );
+			$resultset = $this->getIndex()->search( $query );
 
 			foreach ( $resultset->getResults() as $result ) {
 				$data = $result->getData();
@@ -210,7 +208,7 @@ class ElasticSearchTTMServer
 			}
 
 			// Ensure results are in quality order
-			uasort( $suggestions, function ( $a, $b ) {
+			uasort( $suggestions, static function ( $a, $b ) {
 				if ( $a['quality'] === $b['quality'] ) {
 					return 0;
 				}
@@ -231,8 +229,8 @@ class ElasticSearchTTMServer
 	 *
 	 * @param MessageHandle $handle
 	 * @param ?string $targetText
-	 * @throws \RuntimeException
 	 * @return bool
+	 * @throws RuntimeException
 	 */
 	public function update( MessageHandle $handle, $targetText ) {
 		if ( !$handle->isValid() || $handle->getCode() === '' ) {
@@ -254,11 +252,11 @@ class ElasticSearchTTMServer
 		// Do not delete definitions, because the translations are attached to that
 		if ( $handle->getCode() !== $sourceLanguage ) {
 			$localid = $handle->getTitleForBase()->getPrefixedText();
-			$this->deleteByQuery( $this->getType(), Elastica\Query::create(
-				( new \Elastica\Query\BoolQuery() )
-				->addFilter( new Elastica\Query\Term( [ 'wiki' => wfWikiID() ] ) )
-				->addFilter( new Elastica\Query\Term( [ 'language' => $handle->getCode() ] ) )
-				->addFilter( new Elastica\Query\Term( [ 'localid' => $localid ] ) ) ) );
+			$this->deleteByQuery( $this->getIndex(), Query::create(
+				( new BoolQuery() )
+				->addFilter( new Term( [ 'wiki' => WikiMap::getCurrentWikiId() ] ) )
+				->addFilter( new Term( [ 'language' => $handle->getCode() ] ) )
+				->addFilter( new Term( [ 'localid' => $localid ] ) ) ) );
 		}
 
 		// If translation was made fuzzy, we do not need to add anything
@@ -266,15 +264,21 @@ class ElasticSearchTTMServer
 			return true;
 		}
 
+		// source language is null, skip doing rest of the stuff
+		if ( $sourceLanguage === null ) {
+			return true;
+		}
+
 		$revId = $handle->getTitleForLanguage( $sourceLanguage )->getLatestRevID();
 		$doc = $this->createDocument( $handle, $targetText, $revId );
 		$fname = __METHOD__;
 
-		MWElasticUtils::withRetry( self::BULK_INDEX_RETRY_ATTEMPTS,
+		$mwElasticUtilsClass = $this->getMWElasticUtilsClass();
+		$mwElasticUtilsClass::withRetry( self::BULK_INDEX_RETRY_ATTEMPTS,
 			function () use ( $doc ) {
-				$this->getType()->addDocument( $doc );
+				$this->getIndex()->addDocuments( [ $doc ] );
 			},
-			function ( $e, $errors ) use ( $fname ) {
+			static function ( $e, $errors ) use ( $fname ) {
 				$c = get_class( $e );
 				$msg = $e->getMessage();
 				error_log( $fname . ": update failed ($c: $msg); retrying." );
@@ -289,13 +293,13 @@ class ElasticSearchTTMServer
 	 * @param MessageHandle $handle
 	 * @param string $text
 	 * @param int $revId
-	 * @return \Elastica\Document
+	 * @return Document
 	 */
 	protected function createDocument( MessageHandle $handle, $text, $revId ) {
 		$language = $handle->getCode();
 
 		$localid = $handle->getTitleForBase()->getPrefixedText();
-		$wiki = wfWikiID();
+		$wiki = WikiMap::getCurrentWikiId();
 		$globalid = "$wiki-$localid-$revId/$language";
 
 		$data = [
@@ -307,7 +311,7 @@ class ElasticSearchTTMServer
 			'group' => $handle->getGroupIds(),
 		];
 
-		return new \Elastica\Document( $globalid, $data );
+		return new Document( $globalid, $data, '_doc' );
 	}
 
 	/**
@@ -316,62 +320,63 @@ class ElasticSearchTTMServer
 	 */
 	public function createIndex( $rebuild ) {
 		$indexSettings = [
-			'number_of_shards' => $this->getShardCount(),
-			'analysis' => [
-				'filter' => [
-					'prefix_filter' => [
-						'type' => 'edge_ngram',
-						'min_gram' => 2,
-						'max_gram' => 20
+			'settings' => [
+				'index' => [
+					'number_of_shards' => $this->getShardCount(),
+					'analysis' => [
+						'filter' => [
+							'prefix_filter' => [
+								'type' => 'edge_ngram',
+								'min_gram' => 2,
+								'max_gram' => 20
+							]
+						],
+						'analyzer' => [
+							'prefix' => [
+								'type' => 'custom',
+								'tokenizer' => 'standard',
+								'filter' => [ 'lowercase', 'prefix_filter' ]
+							],
+							'casesensitive' => [
+								'tokenizer' => 'standard'
+							]
+						]
 					]
 				],
-				'analyzer' => [
-					'prefix' => [
-						'type' => 'custom',
-						'tokenizer' => 'standard',
-						'filter' => [ 'standard', 'lowercase', 'prefix_filter' ]
-					],
-					'casesensitive' => [
-						'tokenizer' => 'standard',
-						'filter' => [ 'standard' ]
-					]
-				]
-			]
+			],
 		];
 		$replicas = $this->getReplicaCount();
 		if ( strpos( $replicas, '-' ) === false ) {
-			$indexSettings['number_of_replicas'] = $replicas;
+			$indexSettings['settings']['index']['number_of_replicas'] = $replicas;
 		} else {
-			$indexSettings['auto_expand_replicas'] = $replicas;
+			$indexSettings['settings']['index']['auto_expand_replicas'] = $replicas;
 		}
 
-		$type = $this->getType();
-		$type->getIndex()->create( $indexSettings, $rebuild );
+		$this->getIndex()->create( $indexSettings, $rebuild );
 	}
 
 	/**
 	 * Begin the bootstrap process.
 	 *
-	 * @throws \RuntimeException
+	 * @throws RuntimeException
 	 */
 	public function beginBootstrap() {
-		$type = $this->getType();
+		$this->checkElasticsearchVersion();
+		$index = $this->getIndex();
 		if ( $this->updateMapping ) {
 			$this->logOutput( 'Updating the index mappings...' );
 			$this->createIndex( true );
-		} elseif ( !$type->getIndex()->exists() ) {
+		} elseif ( !$index->exists() ) {
 			$this->createIndex( false );
 		}
 
-		$settings = $type->getIndex()->getSettings();
+		$settings = $index->getSettings();
 		$settings->setRefreshInterval( '-1' );
 
-		$this->deleteByQuery( $this->getType(), \Elastica\Query::create(
-			( new Elastica\Query\Term() )->setTerm( 'wiki', wfWikiID() ) ) );
+		$this->deleteByQuery( $this->getIndex(), Query::create(
+			( new Term() )->setTerm( 'wiki', WikiMap::getCurrentWikiId() ) ) );
 
-		$mapping = new \Elastica\Type\Mapping();
-		$mapping->setType( $type );
-		$mapping->setProperties( [
+		$properties = [
 			'wiki' => [ 'type' => 'keyword' ],
 			'localid' => [ 'type' => 'keyword' ],
 			'uri' => [ 'type' => 'keyword' ],
@@ -397,8 +402,22 @@ class ElasticSearchTTMServer
 					]
 				]
 			],
-		] );
-		$mapping->send();
+		];
+		if ( $this->useElastica6() ) {
+			// Elastica 6 support
+			// @phan-suppress-next-line PhanUndeclaredClassMethod
+			$mapping = new \Elastica\Type\Mapping();
+			// @phan-suppress-next-line PhanUndeclaredMethod, PhanUndeclaredClassMethod
+			$mapping->setType( $index->getType( '_doc' ) );
+			// @phan-suppress-next-line PhanUndeclaredClassMethod
+			$mapping->setProperties( $properties );
+			// @phan-suppress-next-line PhanUndeclaredClassMethod
+			$mapping->send( [ 'include_type_name' => 'true' ] );
+		} else {
+			// Elastica 7
+			$mapping = new \Elastica\Mapping( $properties );
+			$mapping->send( $index, [ 'include_type_name' => 'false' ] );
+		}
 
 		$this->waitUntilReady();
 	}
@@ -424,14 +443,15 @@ class ElasticSearchTTMServer
 	public function batchInsertTranslations( array $batch ) {
 		$docs = [];
 		foreach ( $batch as $data ) {
-			list( $handle, $sourceLanguage, $text ) = $data;
+			[ $handle, $sourceLanguage, $text ] = $data;
 			$revId = $handle->getTitleForLanguage( $sourceLanguage )->getLatestRevID();
 			$docs[] = $this->createDocument( $handle, $text, $revId );
 		}
 
-		MWElasticUtils::withRetry( self::BULK_INDEX_RETRY_ATTEMPTS,
+		$mwElasticUtilsClass = $this->getMWElasticUtilsClass();
+		$mwElasticUtilsClass::withRetry( self::BULK_INDEX_RETRY_ATTEMPTS,
 			function () use ( $docs ) {
-				$this->getType()->addDocuments( $docs );
+				$this->getIndex()->addDocuments( $docs );
 			},
 			function ( $e, $errors ) {
 				$c = get_class( $e );
@@ -447,7 +467,7 @@ class ElasticSearchTTMServer
 	}
 
 	public function endBootstrap() {
-		$index = $this->getType()->getIndex();
+		$index = $this->getIndex();
 		$index->refresh();
 		$index->forcemerge();
 		$index->getSettings()->setRefreshInterval( '5s' );
@@ -456,9 +476,9 @@ class ElasticSearchTTMServer
 	public function getClient() {
 		if ( !$this->client ) {
 			if ( isset( $this->config['config'] ) ) {
-				$this->client = new \Elastica\Client( $this->config['config'] );
+				$this->client = new Client( $this->config['config'] );
 			} else {
-				$this->client = new \Elastica\Client();
+				$this->client = new Client();
 			}
 		}
 		return $this->client;
@@ -474,10 +494,9 @@ class ElasticSearchTTMServer
 		return $this->config['index'] ?? 'ttmserver';
 	}
 
-	public function getType() {
+	public function getIndex() {
 		return $this->getClient()
-			->getIndex( $this->getIndexName() )
-			->getType( 'message' );
+			->getIndex( $this->getIndexName() );
 	}
 
 	protected function getShardCount() {
@@ -500,7 +519,7 @@ class ElasticSearchTTMServer
 		$path = "_cluster/health/$indexName";
 		$response = $this->getClient()->request( $path );
 		if ( $response->hasError() ) {
-			throw new \Exception( "Error while fetching index health status: " . $response->getError() );
+			throw new Exception( "Error while fetching index health status: " . $response->getError() );
 		}
 		return $response->getData();
 	}
@@ -531,7 +550,7 @@ class ElasticSearchTTMServer
 				}
 				$this->logOutput( "\tIndex is $status retrying..." );
 				sleep( 5 );
-			} catch ( \Exception $e ) {
+			} catch ( Exception $e ) {
 				$this->logOutput( "Error while waiting for green ({$e->getMessage()}), retrying..." );
 			}
 		}
@@ -539,7 +558,8 @@ class ElasticSearchTTMServer
 	}
 
 	protected function waitUntilReady() {
-		$statuses = MWElasticUtils::waitForGreen(
+		$mwElasticUtilsClass = $this->getMWElasticUtilsClass();
+		$statuses = $mwElasticUtilsClass::waitForGreen(
 			$this->getClient(),
 			$this->getIndexName(),
 			self::WAIT_UNTIL_READY_TIMEOUT );
@@ -600,14 +620,14 @@ class ElasticSearchTTMServer
 
 		// Allow searching either by message content or message id (page name
 		// without language subpage) with exact match only.
-		$searchQuery = new \Elastica\Query\BoolQuery();
+		$searchQuery = new BoolQuery();
 		foreach ( $fields as $analyzer => $words ) {
 			foreach ( $words as $word ) {
-				$boolQuery = new \Elastica\Query\BoolQuery();
-				$contentQuery = new \Elastica\Query\MatchQuery();
+				$boolQuery = new BoolQuery();
+				$contentQuery = new MatchQuery();
 				$contentQuery->setFieldQuery( $analyzer, $word );
 				$boolQuery->addShould( $contentQuery );
-				$messageQuery = new \Elastica\Query\Term();
+				$messageQuery = new Term();
 				$messageQuery->setTerm( 'localid', $word );
 				$boolQuery->addShould( $messageQuery );
 
@@ -631,8 +651,8 @@ class ElasticSearchTTMServer
 				$handle = new MessageHandle( $title );
 				if ( $handle->isValid() && $handle->getCode() !== '' ) {
 					$localid = $handle->getTitleForBase()->getPrefixedText();
-					$boolQuery = new \Elastica\Query\BoolQuery();
-					$messageId = new \Elastica\Query\Term();
+					$boolQuery = new BoolQuery();
+					$messageId = new Term();
 					$messageId->setTerm( 'localid', $localid );
 					$boolQuery->addMust( $messageId );
 					$searchQuery->addShould( $boolQuery );
@@ -651,17 +671,17 @@ class ElasticSearchTTMServer
 	 * @return \Elastica\Search
 	 */
 	public function createSearch( $queryString, $opts, $highlight ) {
-		$query = new \Elastica\Query();
+		$query = new Query();
 
-		list( $searchQuery, $highlights ) = $this->parseQueryString( $queryString, $opts );
+		[ $searchQuery, $highlights ] = $this->parseQueryString( $queryString, $opts );
 		$query->setQuery( $searchQuery );
 
-		$language = new \Elastica\Aggregation\Terms( 'language' );
+		$language = new Terms( 'language' );
 		$language->setField( 'language' );
 		$language->setSize( 500 );
 		$query->addAggregation( $language );
 
-		$group = new \Elastica\Aggregation\Terms( 'group' );
+		$group = new Terms( 'group' );
 		$group->setField( 'group' );
 		// Would like to prioritize the top level groups and not show subgroups
 		// if the top group has only few hits, but that doesn't seem to be possile.
@@ -675,18 +695,18 @@ class ElasticSearchTTMServer
 		// multiple must clauses are executed by converting each filter into a bit
 		// field then anding them together. The latter is normally faster if either
 		// of the subfilters are reused. May not make a difference in this context.
-		$filters = new \Elastica\Query\BoolQuery();
+		$filters = new BoolQuery();
 
 		$language = $opts['language'];
 		if ( $language !== '' ) {
-			$languageFilter = new \Elastica\Query\Term();
+			$languageFilter = new Term();
 			$languageFilter->setTerm( 'language', $language );
 			$filters->addFilter( $languageFilter );
 		}
 
 		$group = $opts['group'];
 		if ( $group !== '' ) {
-			$groupFilter = new \Elastica\Query\Term();
+			$groupFilter = new Term();
 			$groupFilter->setTerm( 'group', $group );
 			$filters->addFilter( $groupFilter );
 		}
@@ -699,7 +719,7 @@ class ElasticSearchTTMServer
 			$query->setPostFilter( $filters );
 		}
 
-		list( $pre, $post ) = $highlight;
+		[ $pre, $post ] = $highlight;
 		$query->setHighlight( [
 			// The value must be an object
 			'pre_tags' => [ $pre ],
@@ -707,7 +727,7 @@ class ElasticSearchTTMServer
 			'fields' => $highlights,
 		] );
 
-		return $this->getType()->getIndex()->createSearch( $query );
+		return $this->getIndex()->createSearch( $query );
 	}
 
 	/**
@@ -723,7 +743,7 @@ class ElasticSearchTTMServer
 
 		try {
 			return $search->search();
-		} catch ( \Elastica\Exception\ExceptionInterface $e ) {
+		} catch ( ExceptionInterface $e ) {
 			throw new TTMServerException( $e->getMessage() );
 		}
 	}
@@ -785,33 +805,60 @@ class ElasticSearchTTMServer
 	 * TODO: Elastica\Index::deleteByQuery() ? was removed
 	 *  in 2.x and returned in 5.x.
 	 *
-	 * @param \Elastica\Type $type the source index
-	 * @param \Elastica\Query $query
-	 * @throws \RuntimeException
+	 * @param \Elastica\Index $index the source index
+	 * @param Query $query
+	 * @throws RuntimeException
 	 */
-	private function deleteByQuery( \Elastica\Type $type, \Elastica\Query $query ) {
+	private function deleteByQuery( \Elastica\Index $index, Query $query ) {
 		try {
-			MWElasticUtils::deleteByQuery( $type->getIndex(), $query, /* $allowConflicts = */ true );
-		} catch ( \Exception $e ) {
+			$mwElasticUtilsClass = $this->getMWElasticUtilsClass();
+			$mwElasticUtilsClass::deleteByQuery( $index, $query, /* $allowConflicts = */ true );
+		} catch ( Exception $e ) {
 			LoggerFactory::getInstance( 'ElasticSearchTTMServer' )->error(
 				'Problem encountered during deletion.',
 				[ 'exception' => $e ]
 			);
 
-			throw new \RuntimeException( "Problem encountered during deletion.\n" . $e );
+			throw new RuntimeException( "Problem encountered during deletion.\n" . $e );
 		}
 	}
 
-	/** @return bool */
-	public function isFrozen() {
-		try {
-			return MWElasticUtils::isFrozen( $this->getClient() );
-		} catch ( \Exception $e ) {
-			LoggerFactory::getInstance( 'ElasticSearchTTMServer' )->warning(
-				'Problem encountered while checking the frozen index.',
-				[ 'exception' => $e ]
-			);
-			return false;
+	/**
+	 * For MW < 1.38 MWElasticUtils was not namespaced in the Elastica extension
+	 * Changed in Id29047c67a7d0bedc9a7e7ebd3879f21f82b2742
+	 * @return string
+	 */
+	private function getMWElasticUtilsClass(): string {
+		if ( class_exists( MWElasticUtils::class ) ) {
+			return MWElasticUtils::class;
+		} else {
+			return '\MWElasticUtils';
 		}
+	}
+
+	/* @throws RuntimeException */
+	private function getElasticsearchVersion(): string {
+		$response = $this->getClient()->request( '' );
+		if ( !$response->isOK() ) {
+			throw new \RuntimeException( "Cannot fetch elasticsearch version: " . $response->getError() );
+		}
+
+		$result = $response->getData();
+		if ( !isset( $result['version']['number'] ) ) {
+			throw new \RuntimeException( 'Unable to determine elasticsearch version, aborting.' );
+		}
+
+		return $result[ 'version' ][ 'number' ];
+	}
+
+	private function checkElasticsearchVersion() {
+		$version = $this->getElasticsearchVersion();
+		if ( strpos( $version, '6.8' ) !== 0 && strpos( $version, '7.' ) !== 0 ) {
+			throw new \RuntimeException( "Only Elasticsearch 6.8.x and 7.x are supported. Your version: $version." );
+		}
+	}
+
+	private function useElastica6(): bool {
+		return class_exists( '\Elastica\Type' );
 	}
 }

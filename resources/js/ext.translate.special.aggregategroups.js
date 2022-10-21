@@ -9,15 +9,14 @@
 	}
 
 	function dissociate( event ) {
-		var params,
-			$target = $( event.target ),
+		var $target = $( event.target ),
 			api = new mw.Api();
 
 		function successFunction() {
 			$target.parent( 'li' ).remove();
 		}
 
-		params = $.extend( getApiParams( $target ), {
+		var params = $.extend( getApiParams( $target ), {
 			do: 'dissociate',
 			group: $target.data( 'groupid' )
 		} );
@@ -31,14 +30,14 @@
 	}
 
 	function associate( event, resp ) {
-		var successFunction, params, subgroupId, i,
-			$target = $( event.target ),
+		var $target = $( event.target ),
 			$parent = $target.parents( '.mw-tpa-group' ),
 			parentId = $parent.data( 'id' ),
-			subgroupName = $parent.children( '.tp-group-input' ).val(),
+			subgroupName = $parent.find( '.tp-group-input' ).val(),
 			api = new mw.Api();
 
-		successFunction = function () {
+		var subgroupId;
+		var successFunction = function () {
 			var aAttr, $a, spanAttr, $span, $ol;
 
 			aAttr = {
@@ -58,12 +57,12 @@
 			$ol = $( '#mw-tpa-grouplist-' + parentId );
 			$ol.append( $( '<li>' ).append( $a, $span ) );
 			$span.on( 'click', dissociate );
-			$parent.children( '.tp-group-input' ).val( '' );
+			$parent.find( '.tp-group-input' ).val( '' );
 		};
 
 		// Get the label for the value and make API request if valid
 		subgroupId = '';
-		for ( i = 0; i < resp.length; ++i ) {
+		for ( var i = 0; i < resp.length; ++i ) {
 			if ( subgroupName === resp[ i ].label ) {
 				subgroupId = resp[ i ].id;
 				break;
@@ -71,7 +70,7 @@
 		}
 
 		if ( subgroupId ) {
-			params = $.extend( getApiParams( $target ), {
+			var params = $.extend( getApiParams( $target ), {
 				do: 'associate',
 				group: subgroupId
 			} );
@@ -89,8 +88,7 @@
 	}
 
 	function removeGroup( event ) {
-		var params,
-			$target = $( event.target ),
+		var $target = $( event.target ),
 			api = new mw.Api();
 
 		function successFunction() {
@@ -101,7 +99,7 @@
 		if ( typeof window.confirm === 'function' &&
 			// eslint-disable-next-line no-alert
 			window.confirm( mw.msg( 'tpt-aggregategroup-remove-confirm' ) ) ) {
-			params = $.extend( getApiParams( $target ), {
+			var params = $.extend( getApiParams( $target ), {
 				do: 'remove'
 			} );
 
@@ -120,15 +118,13 @@
 			aggregateGroupId = $parent.data( 'groupid' ),
 			$displayGroup = $parent.children( '.tp-display-group' ),
 			$editGroup = $parent.children( '.tp-edit-group' ),
-			successFunction,
-			params,
 			$aggGroupNameInputName = $editGroup.children( 'input.tp-aggregategroup-edit-name' ),
 			$aggGroupNameInputDesc = $editGroup.children( 'input.tp-aggregategroup-edit-description' ),
 			aggregateGroupName = $aggGroupNameInputName.val(),
 			aggregateGroupDesc = $aggGroupNameInputDesc.val(),
 			api = new mw.Api();
 
-		successFunction = function () {
+		var successFunction = function () {
 			// Replace the text by the new text without altering the other 2 span tags
 			$displayGroup.children( '.tp-name' ).contents().filter( function () {
 				return this.nodeType === 3;
@@ -138,7 +134,7 @@
 			$editGroup.addClass( 'hidden' );
 		};
 
-		params = {
+		var params = {
 			action: 'aggregategroups',
 			do: 'update',
 			groupname: aggregateGroupName,
@@ -161,14 +157,68 @@
 		$parent.children( '.tp-edit-group' ).addClass( 'hidden' );
 	}
 
+	function getToggleAllGroupsLink() {
+		var $toggleLink = $( '<a>' )
+			.addClass( 'js-tp-toggle-all-groups' )
+			.attr( 'href', '#' )
+			.text( mw.msg( 'tpt-aggregategroup-expand-all-groups' ) );
+
+		var $toggleLinkParent = $( '<div>' )
+			.append( '[', $toggleLink, ']' );
+
+		$toggleLink.on( 'click', function ( event ) {
+			var $target = $( event.target );
+			var isExpanded = $target.hasClass( 'expanded' );
+			var $groupContainers = $( '.js-mw-tpa-group' );
+
+			for ( var i = 0; i < $groupContainers.length; i++ ) {
+				var $groupContainer = $groupContainers.eq( i );
+				var isContainerOpen = $groupContainer.hasClass( 'mw-tpa-group-open' );
+				if ( isExpanded === isContainerOpen ) {
+					toggleGroupContainer( $groupContainer );
+				}
+			}
+
+			$target.toggleClass( 'expanded' );
+			$target.text(
+				isExpanded ?
+					mw.msg( 'tpt-aggregategroup-expand-all-groups' ) :
+					mw.msg( 'tpt-aggregategroup-collapse-all-groups' )
+
+			);
+
+			event.preventDefault();
+		} );
+
+		return $toggleLinkParent;
+	}
+
+	function toggleGroupContainer( $groupContainer ) {
+		var $toggleTrigger = $groupContainer.find( '.js-tp-toggle-groups' );
+		var isOpen = $groupContainer.hasClass( 'mw-tpa-group-open' );
+		changeGroupToggleIconState( $toggleTrigger, !isOpen );
+		$groupContainer.toggleClass( 'mw-tpa-group-open' );
+	}
+
+	function changeGroupToggleIconState( $icon, isOpen ) {
+		var title = mw.msg( 'tpt-aggregategroup-expand-group' );
+		var ariaExpanded = 'false';
+		if ( isOpen ) {
+			title = mw.msg( 'tpt-aggregategroup-collapse-group' );
+			ariaExpanded = 'true';
+		}
+
+		$icon.attr( 'title', title )
+			.attr( 'aria-expanded', ariaExpanded );
+	}
+
 	$( function () {
-		var excludeFunction, autocompleteFunction, resp,
-			api = new mw.Api(),
+		var api = new mw.Api(),
 			exclude = [],
 			groups = [],
 			$input = $( '.tp-group-input' );
 
-		excludeFunction = function ( event ) {
+		var excludeFunction = function ( event ) {
 			exclude = [];
 
 			if ( groups.length === 0 ) {
@@ -196,7 +246,8 @@
 			);
 		};
 
-		autocompleteFunction = function ( request, response ) {
+		var resp;
+		var autocompleteFunction = function ( request, response ) {
 			// Allow case insensitive search
 			var inp = new RegExp( request.term, 'i' );
 
@@ -245,8 +296,7 @@
 		} );
 
 		$( '#tpt-aggregategroups-save' ).on( 'click', function () {
-			var successFunction, params,
-				$aggGroupNameInputName = $( 'input.tp-aggregategroup-add-name' ),
+			var $aggGroupNameInputName = $( 'input.tp-aggregategroup-add-name' ),
 				$aggGroupNameInputDesc = $( 'input.tp-aggregategroup-add-description' ),
 				aggregateGroupName = $aggGroupNameInputName.val(),
 				aggregateGroupDesc = $aggGroupNameInputDesc.val();
@@ -256,36 +306,43 @@
 			$aggGroupNameInputName.val( '' );
 			$aggGroupNameInputDesc.val( '' );
 
-			successFunction = function ( data ) {
-				var $removeSpan, $editSpan, $displayHeader, $div, $groupSelector, $addButton,
-					$cancelButton, $divDisplay, $divEdit, $saveButton,
-					aggregateGroupId = data.aggregategroups.aggregategroupId;
+			var successFunction = function ( data ) {
+				var aggregateGroupId = data.aggregategroups.aggregategroupId;
+				var subGroupId = 'tp-subgroup-' + aggregateGroupId;
 
-				$removeSpan = $( '<span>' ).attr( 'id', aggregateGroupId )
+				var $removeSpan = $( '<span>' ).attr( 'id', aggregateGroupId )
 					.addClass( 'tp-aggregate-remove-ag-button' );
-				$editSpan = $( '<span>' ).attr( 'id', aggregateGroupId )
+				var $editSpan = $( '<span>' ).attr( 'id', aggregateGroupId )
 					.addClass( 'tp-aggregate-edit-ag-button' );
-				// Prints the name and the two spans in a single row
-				$displayHeader = $( '<h2>' ).addClass( 'tp-name' ).text( aggregateGroupName )
-					.append( $editSpan, $removeSpan );
+				var $toggleIcon = $( '<a>' ).addClass( 'js-tp-toggle-groups tp-toggle-group-icon' )
+					.attr( 'aria-controls', subGroupId )
+					.attr( 'role', 'button' );
 
-				$divDisplay = $( '<div>' ).addClass( 'tp-display-group' )
+				var isOpen = true;
+				changeGroupToggleIconState( $toggleIcon, isOpen );
+
+				// Prints the name and the two spans in a single row
+				var $displayHeader = $( '<h2>' ).addClass( 'tp-name' ).text( aggregateGroupName )
+					.append( $editSpan, $removeSpan )
+					.prepend( $toggleIcon );
+
+				var $divDisplay = $( '<div>' ).addClass( 'tp-display-group' )
 					.append( $displayHeader )
 					.append( $( '<p>' ).addClass( 'tp-desc' ).text( aggregateGroupDesc ) );
 
-				$saveButton = $( '<input>' )
+				var $saveButton = $( '<input>' )
 					.attr( {
 						type: 'button',
 						class: 'tp-aggregategroup-update'
 					} )
 					.val( mw.msg( 'tpt-aggregategroup-update' ) );
-				$cancelButton = $( '<input>' )
+				var $cancelButton = $( '<input>' )
 					.attr( {
 						type: 'button',
 						class: 'tp-aggregategroup-update-cancel'
 					} )
 					.val( mw.msg( 'tpt-aggregategroup-update-cancel' ) );
-				$divEdit = $( '<div>' )
+				var $divEdit = $( '<div>' )
 					.addClass( 'tp-edit-group hidden' )
 					.append( $( '<label>' )
 						.text( mw.msg( 'tpt-aggregategroup-edit-name' ) ) )
@@ -310,14 +367,18 @@
 					)
 					.append( $saveButton, $cancelButton );
 
-				$div = $( '<div>' ).addClass( 'mw-tpa-group' )
-					.append( $divDisplay, $divEdit )
+				var $div = $( '<div>' )
+					.addClass( 'mw-tpa-group js-mw-tpa-group mw-tpa-group-open' )
+					.append( $divDisplay, $divEdit );
+
+				var $subGroupContents = $( '<div>' ).addClass( 'tp-sub-groups' )
+					.attr( 'id', subGroupId )
 					.append( $( '<ol id=\'mw-tpa-grouplist-' + aggregateGroupId + '\'>' ) );
 
 				$div.data( 'groupid', aggregateGroupId );
 				$div.data( 'id', aggregateGroupId );
 
-				$groupSelector = $( '<input>' ).attr( {
+				var $groupSelector = $( '<input>' ).attr( {
 					type: 'text',
 					class: 'tp-group-input'
 				} );
@@ -329,17 +390,21 @@
 					// Enable showing all groups when nothing is entered
 					$( this ).autocomplete( 'search', $( this ).val() );
 				} );
-				$addButton = $( '<input>' )
+				var $addButton = $( '<input>' )
 					.attr( {
 						type: 'button',
 						class: 'tp-aggregate-add-button',
 						id: aggregateGroupId
 					} )
 					.val( mw.msg( 'tpt-aggregategroup-add' ) );
-				$div.append( $groupSelector, $addButton );
+
 				$addButton.on( 'click', function ( event ) {
 					associate( event, resp );
 				} );
+
+				$subGroupContents.append( $groupSelector, $addButton );
+				$div.append( $subGroupContents );
+
 				$editSpan.on( 'click', function ( event ) {
 					var $parent = $( event.target ).closest( '.mw-tpa-group' );
 					$parent.children( '.tp-display-group' ).addClass( 'hidden' );
@@ -350,10 +415,10 @@
 				$cancelButton.on( 'click', cancelEditGroup );
 				$removeSpan.on( 'click', removeGroup );
 				$( 'div.tpt-add-new-group' ).addClass( 'hidden' );
-				$( 'a.tpt-add-new-group' ).before( $div );
+				$( 'div.mw-tpa-group' ).first().before( $div );
 			};
 
-			params = {
+			var params = {
 				action: 'aggregategroups',
 				do: 'add',
 				groupname: aggregateGroupName,
@@ -367,5 +432,18 @@
 					alert( data.error && data.error.info );
 				} );
 		} );
+
+		$( '#tpt-aggregategroups-close' ).on( 'click', function ( event ) {
+			$( 'div.tpt-add-new-group' ).addClass( 'hidden' );
+			event.preventDefault();
+		} );
+
+		$( '#mw-content-text' ).on( 'click', '.js-tp-toggle-groups', function ( event ) {
+			var $target = $( event.target );
+			var $groupContainer = $target.parents( '.js-mw-tpa-group' );
+			toggleGroupContainer( $groupContainer );
+		} );
+
+		$( 'div.mw-tpa-group' ).first().before( getToggleAllGroupsLink() );
 	} );
 }() );

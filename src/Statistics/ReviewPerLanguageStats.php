@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace MediaWiki\Extension\Translate\Statistics;
 
-use ActorMigration;
 use TranslateUtils;
 
 /**
@@ -54,25 +53,21 @@ class ReviewPerLanguageStats extends TranslatePerLanguageStats {
 		}
 
 		if ( $this->opts->getValue( 'count' ) === 'reviewers' ) {
-			$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
-			$tables += $actorQuery['tables'];
-			$fields['log_user_text'] = $actorQuery['fields']['log_user_text'];
-			$joins += $actorQuery['joins'];
+			$fields[] = 'log_actor';
 		}
 
 		$type .= '-reviews';
 	}
 
 	public function indexOf( $row ) {
-		// We need to check that there is only one user per day.
 		if ( $this->opts->getValue( 'count' ) === 'reviewers' ) {
 			$date = $this->formatTimestamp( $row->log_timestamp );
 
-			if ( isset( $this->usercache[$date][$row->log_user_text] ) ) {
+			if ( isset( $this->seenUsers[$date][$row->log_actor] ) ) {
 				return false;
-			} else {
-				$this->usercache[$date][$row->log_user_text] = 1;
 			}
+
+			$this->seenUsers[$date][$row->log_actor] = 1;
 		}
 
 		// Do not consider language-less pages.
@@ -113,5 +108,3 @@ class ReviewPerLanguageStats extends TranslatePerLanguageStats {
 		return $row->log_timestamp;
 	}
 }
-
-class_alias( ReviewPerLanguageStats::class, '\MediaWiki\Extensions\Translate\ReviewPerLanguageStats' );

@@ -8,7 +8,7 @@ use MediaWiki\MediaWikiServices;
 use MessageGroups;
 use RawMessage;
 use TranslateUtils;
-use const DB_MASTER;
+use const DB_PRIMARY;
 
 /**
  * @since 2021.03
@@ -24,7 +24,7 @@ class CleanupTranslationProgressStatsMaintenanceScript extends Maintenance {
 
 	public function execute() {
 		$services = MediaWikiServices::getInstance();
-		$db = $services->getDBLoadBalancer()->getConnectionRef( DB_MASTER );
+		$db = $services->getDBLoadBalancer()->getConnectionRef( DB_PRIMARY );
 
 		$dbGroupIds = $db->selectFieldValues(
 			'translate_groupstats',
@@ -32,7 +32,10 @@ class CleanupTranslationProgressStatsMaintenanceScript extends Maintenance {
 			'*',
 			__METHOD__
 		);
-		$knownGroupIds = array_keys( MessageGroups::singleton()->getGroups() );
+		$knownGroupIds = array_map(
+			'MessageGroupStats::getDatabaseIdForGroupId',
+			array_keys( MessageGroups::singleton()->getGroups() )
+		);
 		$unknownGroupIds = array_diff( $dbGroupIds, $knownGroupIds );
 
 		if ( $unknownGroupIds !== [] ) {

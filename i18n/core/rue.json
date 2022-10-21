@@ -2,6 +2,7 @@
 	"@metadata": {
 		"authors": [
 			"Gazeb",
+			"Gramo6",
 			"Tkalyn"
 		]
 	},
@@ -45,7 +46,6 @@
 	"translate-edit-warnings": "Упозорнїня на неповный переклад",
 	"translate-edit-tmmatch-source": "Жрідловый текст перекладу: $1",
 	"translate-edit-tmmatch": "$1% згода",
-	"translate-use-suggestion": "Замінити  актуалный переклад гевсёв пропозіціов.",
 	"translate-edit-nopermission": "На перекладаня повідомлїнь вам треба права.",
 	"translate-edit-askpermission": "Попросити права",
 	"translate-checks-parameters": "Наслїдуючій {{PLURAL:$2|параметер не є хоснованый|параметры не суть хоснованы}}:\n<strong>$1</strong>",
@@ -153,6 +153,7 @@
 	"translate-manage-action-import": "Імпортовати",
 	"translate-manage-action-conflict": "Імпортовати і позначіти як неперевірене",
 	"translate-manage-action-ignore": "Іґноровати",
+	"translate-manage-import-ignore": "Перескочіти повідомлїня $1.",
 	"translate-manage-submit": "Выконати",
 	"translate-manage-import-done": "Вшытко зроблено!",
 	"importtranslations": "Імпортовати переклады",
@@ -166,5 +167,6 @@
 	"translate-gs-count": "Рахунок",
 	"translate-gs-total": "Цілком",
 	"translate-gs-avgscore": "Сер. оцінка",
+	"translate-documentation-language": "Документація уповісток",
 	"translate-searchprofile": "Переклады"
 }

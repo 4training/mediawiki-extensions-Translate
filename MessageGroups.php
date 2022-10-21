@@ -8,6 +8,8 @@
  * @copyright Copyright © 2008-2013, Niklas Laxström, Siebrand Mazeland
  * @license GPL-2.0-or-later
  */
+
+use MediaWiki\Extension\Translate\MessageProcessing\StringMatcher;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -26,7 +28,7 @@ class MessageGroups {
 	private $cache;
 
 	/**
-	 * Tracks the current cache verison. Update this when there are incompatible changes
+	 * Tracks the current cache version. Update this when there are incompatible changes
 	 * with the last version of the cache to force a new key to be used. The older cache
 	 * will automatically expire and be cleared off.
 	 * @var int
@@ -83,13 +85,13 @@ class MessageGroups {
 		$cache = $this->getCache();
 		/** @var DependencyWrapper $wrapper */
 		$wrapper = $cache->getWithSetCallback(
-			self::getCacheKey(),
+			$this->getCacheKey(),
 			$cache::TTL_DAY,
 			$regenerator,
 			[
 				'lockTSE' => 30, // avoid stampedes (mutex)
-				'checkKeys' => [ self::getCacheKey() ],
-				'touchedCallback' => function ( $value ) {
+				'checkKeys' => [ $this->getCacheKey() ],
+				'touchedCallback' => static function ( $value ) {
 					return ( $value instanceof DependencyWrapper && $value->isExpired() )
 						? time() // treat value as if it just expired (for "lockTSE")
 						: null;
@@ -127,7 +129,7 @@ class MessageGroups {
 	public function recache() {
 		// Purge the value from all datacenters
 		$cache = $this->getCache();
-		$cache->touchCheckKey( self::getCacheKey() );
+		$cache->touchCheckKey( $this->getCacheKey() );
 
 		$this->clearProcessCache();
 
@@ -155,7 +157,7 @@ class MessageGroups {
 		$self = self::singleton();
 
 		$cache = $self->getCache();
-		$cache->delete( self::getCacheKey(), 1 );
+		$cache->delete( $self->getCacheKey(), 1 );
 
 		foreach ( $self->getCacheGroupLoaders() as $cacheLoader ) {
 			$cacheLoader->clearCache();
@@ -178,12 +180,7 @@ class MessageGroups {
 		self::$prioritycache = null;
 	}
 
-	/**
-	 * Returns a cacher object.
-	 *
-	 * @return WANObjectCache
-	 */
-	protected function getCache() {
+	protected function getCache(): WANObjectCache {
 		if ( $this->cache === null ) {
 			return MediaWikiServices::getInstance()->getMainWANObjectCache();
 		} else {
@@ -205,11 +202,8 @@ class MessageGroups {
 	 *
 	 * @return string
 	 */
-	protected static function getCacheKey() {
-		$self = self::singleton();
-		$cache = $self->getCache();
-
-		return $cache->makeKey( 'translate-groups', 'v' . self::CACHE_VERSION );
+	public function getCacheKey(): string {
+		return $this->getCache()->makeKey( 'translate-groups', 'v' . self::CACHE_VERSION );
 	}
 
 	/**
@@ -232,7 +226,7 @@ class MessageGroups {
 
 	/**
 	 * Loads and returns group loaders. Group loaders must implement MessageGroupLoader
-	 * and may additionaly implement CachedMessageGroupLoader
+	 * and may additionally implement CachedMessageGroupLoader
 	 * @return MessageGroupLoader[]
 	 */
 	protected function getGroupLoaders() {
@@ -259,7 +253,7 @@ class MessageGroups {
 		// @phan-suppress-next-line PhanEmptyForeach False positive
 		foreach ( $groupLoaderInstances as $loader ) {
 			if ( !$loader instanceof MessageGroupLoader ) {
-				throw new \InvalidArgumentException(
+				throw new InvalidArgumentException(
 					"MessageGroupLoader - $loader must implement the " .
 					"MessageGroupLoader interface."
 				);
@@ -278,7 +272,7 @@ class MessageGroups {
 	 */
 	protected function getCacheGroupLoaders() {
 		// @phan-suppress-next-line PhanTypeMismatchReturn
-		return array_filter( $this->getGroupLoaders(), function ( $groupLoader ) {
+		return array_filter( $this->getGroupLoaders(), static function ( $groupLoader ) {
 			return $groupLoader instanceof CachedMessageGroupLoader;
 		} );
 	}
@@ -344,12 +338,10 @@ class MessageGroups {
 	 */
 	public static function labelExists( $name ) {
 		$loader = AggregateMessageGroupLoader::getInstance();
-		$groups = $loader->loadAggregateGroups();
-		$labels = array_map( function ( $g ) {
-			/** @var MessageGroup $g */
+		$labels = array_map( static function ( MessageGroupBase $g ) {
 			return $g->getLabel();
-		}, $groups );
-		return (bool)in_array( $name, $labels, true );
+		}, $loader->loadAggregateGroups() );
+		return in_array( $name, $labels, true );
 	}
 
 	/**
@@ -372,7 +364,7 @@ class MessageGroups {
 	public static function getPriority( $group ) {
 		if ( self::$prioritycache === null ) {
 			self::$prioritycache = [];
-			// Abusing this table originally intented for other purposes
+			// Abusing this table originally intended for other purposes
 			$db = wfGetDB( DB_REPLICA );
 			$table = 'translate_groupreviews';
 			$fields = [ 'tgr_group', 'tgr_state' ];
@@ -409,7 +401,7 @@ class MessageGroups {
 		// FIXME: This assumes prioritycache has been populated
 		self::$prioritycache[$id] = $priority;
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$table = 'translate_groupreviews';
 		$row = [
 			'tgr_group' => $id,
@@ -434,7 +426,7 @@ class MessageGroups {
 	public static function isDynamic( MessageGroup $group ) {
 		$id = $group->getId();
 
-		return (string)$id !== '' && $id[0] === '!';
+		return ( $id[0] ?? null ) === '!';
 	}
 
 	/**
@@ -496,10 +488,9 @@ class MessageGroups {
 		$paths = [];
 
 		/* This function recursively finds paths to the target group */
-		$pathFinder = function ( &$paths, $group, $targetId, $prefix = '' )
+		$pathFinder = static function ( &$paths, $group, $targetId, $prefix = '' )
 		use ( &$pathFinder ) {
 			if ( $group instanceof AggregateMessageGroup ) {
-				/** @var MessageGroup $subgroup */
 				foreach ( $group->getGroups() as $subgroup ) {
 					$subId = $subgroup->getId();
 					if ( $subId === $targetId ) {
@@ -533,11 +524,9 @@ class MessageGroups {
 		}
 
 		// And finally explode the strings
-		foreach ( $paths as $index => $pathString ) {
-			$paths[$index] = explode( '|', $pathString );
-		}
-
-		return $paths;
+		return array_map( static function ( string $pathString ): array {
+			return explode( '|', $pathString );
+		}, $paths );
 	}
 
 	/** @return self */
@@ -641,8 +630,11 @@ class MessageGroups {
 
 	/**
 	 * Get only groups of specific type (class).
+	 * @phan-template T
 	 * @param string $type Class name of wanted type
-	 * @return MessageGroupBase[] Map of (group ID => MessageGroupBase)
+	 * @phan-param class-string<T> $type
+	 * @return MessageGroup[] Map of (group ID => MessageGroupBase)
+	 * @phan-return array<T&MessageGroup>
 	 * @since 2012-04-30
 	 */
 	public static function getGroupsByType( $type ) {
@@ -653,6 +645,7 @@ class MessageGroups {
 			}
 		}
 
+		// @phan-suppress-next-line PhanTypeMismatchReturn
 		return $groups;
 	}
 
@@ -660,7 +653,7 @@ class MessageGroups {
 	 * Returns a tree of message groups. First group in each subgroup is
 	 * the aggregate group. Groups can be nested infinitely, though in practice
 	 * other code might not handle more than two (or even one) nesting levels.
-	 * One group can exist multiple times in differents parts of the tree.
+	 * One group can exist multiple times in different parts of the tree.
 	 * In other words: [Group1, Group2, [AggGroup, Group3, Group4]]
 	 *
 	 * @throws MWException If cyclic structure is detected.
@@ -679,7 +672,6 @@ class MessageGroups {
 			}
 
 			if ( $o instanceof AggregateMessageGroup ) {
-				/** @var AggregateMessageGroup $o */
 				foreach ( $o->getGroups() as $sid => $so ) {
 					unset( $tree[$sid] );
 				}
@@ -702,32 +694,26 @@ class MessageGroups {
 		 * other in the first loop. So now we check if there are groups left
 		 * over. */
 		$used = [];
-		// Hack to allow passing by reference
-		array_walk_recursive( $tree, [ __CLASS__, 'collectGroupIds' ], [ &$used ] );
-		$unused = array_diff( array_keys( $groups ), array_keys( $used ) );
-		if ( count( $unused ) ) {
-			foreach ( $unused as $index => $id ) {
-				if ( !$groups[$id] instanceof AggregateMessageGroup ) {
+		array_walk_recursive(
+			$tree,
+			static function ( MessageGroup $group ) use ( &$used ) {
+				$used[$group->getId()] = true;
+			}
+		);
+		$unused = array_diff_key( $groups, $used );
+		if ( $unused ) {
+			foreach ( $unused as $index => $group ) {
+				if ( !$group instanceof AggregateMessageGroup ) {
 					unset( $unused[$index] );
 				}
 			}
 
 			// Only list the aggregate groups, other groups cannot cause cycles
-			$participants = implode( ', ', $unused );
+			$participants = implode( ', ', array_keys( $unused ) );
 			throw new MWException( "Found cyclic aggregate message groups: $participants" );
 		}
 
 		return $tree;
-	}
-
-	/**
-	 * See getGroupStructure, just collects ids into array
-	 * @param MessageGroup $value
-	 * @param string $key
-	 * @param array $used
-	 */
-	public static function collectGroupIds( MessageGroup $value, $key, $used ) {
-		$used[0][$value->getId()] = true;
 	}
 
 	/**
@@ -826,10 +812,11 @@ class MessageGroups {
 	 * conditions.
 	 *
 	 * @param MessageHandle $handle Handle for the translation target.
+	 * @param string $targetLanguage
 	 * @return bool
 	 * @since 2013.10
 	 */
-	public static function isTranslatableMessage( MessageHandle $handle ) {
+	public static function isTranslatableMessage( MessageHandle $handle, string $targetLanguage ): bool {
 		static $cache = [];
 
 		if ( !$handle->isValid() ) {
@@ -838,32 +825,17 @@ class MessageGroups {
 
 		$group = $handle->getGroup();
 		$groupId = $group->getId();
-		$language = $handle->getCode();
-		$cacheKey = "$groupId:$language";
+		$cacheKey = "$groupId:$targetLanguage";
 
 		if ( !isset( $cache[$cacheKey] ) ) {
-			$allowed = true;
-			$discouraged = false;
+			$supportedLanguages = TranslateUtils::getLanguageNames( 'en' );
+			$inclusionList = $group->getTranslatableLanguages() ?? $supportedLanguages;
 
-			$whitelist = $group->getTranslatableLanguages();
-			if ( is_array( $whitelist ) && !isset( $whitelist[$language] ) ) {
-				$allowed = false;
-			}
-
-			if ( self::getPriority( $group ) === 'discouraged' ) {
-				$discouraged = true;
-			} else {
-				$priorityLanguages = TranslateMetadata::get( $groupId, 'prioritylangs' );
-				if ( $priorityLanguages ) {
-					$map = array_flip( explode( ',', $priorityLanguages ) );
-					if ( !isset( $map[$language] ) ) {
-						$discouraged = true;
-					}
-				}
-			}
+			$included = isset( $inclusionList[$targetLanguage] );
+			$excluded = TranslateMetadata::isExcluded( $groupId, $targetLanguage );
 
 			$cache[$cacheKey] = [
-				'relevant' => $allowed && !$discouraged,
+				'relevant' => $included && !$excluded,
 				'tags' => [],
 			];
 

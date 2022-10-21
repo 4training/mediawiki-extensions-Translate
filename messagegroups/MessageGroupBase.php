@@ -8,6 +8,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\StringMatcher;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\CombinedInsertablesSuggester;
 use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\InsertableFactory;
 use MediaWiki\Extension\Translate\Validation\ValidationRunner;
@@ -91,24 +93,6 @@ abstract class MessageGroupBase implements MessageGroup {
 		return $this->conf[$section][$key] ?? null;
 	}
 
-	/**
-	 * @return FFS
-	 * @throws MWException
-	 */
-	public function getFFS() {
-		$class = $this->getFromConf( 'FILES', 'class' );
-
-		if ( $class === null ) {
-			return null;
-		}
-
-		if ( !class_exists( $class ) ) {
-			throw new MWException( "FFS class $class does not exist." );
-		}
-
-		return new $class( $this );
-	}
-
 	public function getValidator() {
 		$validatorConfigs = $this->getFromConf( 'VALIDATORS' );
 		if ( $validatorConfigs === null ) {
@@ -135,21 +119,22 @@ abstract class MessageGroupBase implements MessageGroup {
 
 	public function getMangler() {
 		if ( !isset( $this->mangler ) ) {
-			$class = $this->getFromConf( 'MANGLER', 'class' );
+			$class = $this->getFromConf( 'MANGLER', 'class' ) ?? StringMatcher::class;
 
-			if ( $class === null ) {
+			if ( $class === 'StringMatcher' || $class === StringMatcher::class ) {
 				$this->mangler = new StringMatcher();
+				$manglerConfig = $this->conf['MANGLER'] ?? null;
+				if ( $manglerConfig ) {
+					$this->mangler->setConf( $manglerConfig );
+				}
 
 				return $this->mangler;
 			}
 
-			if ( !class_exists( $class ) ) {
-				throw new MWException( "Mangler class $class does not exist." );
-			}
-
-			/** @todo Branch handling, merge with upper branch keys */
-			$this->mangler = new $class();
-			$this->mangler->setConf( $this->conf['MANGLER'] );
+			throw new InvalidArgumentException(
+				'Unable to create StringMangler for group ' . $this->getId() . ': ' .
+				"Custom StringManglers ($class) are currently not supported."
+			);
 		}
 
 		return $this->mangler;
@@ -288,40 +273,21 @@ abstract class MessageGroupBase implements MessageGroup {
 		return $code === $this->getSourceLanguage();
 	}
 
-	/** @deprecated Use getMessageGroupStates */
-	public function getWorkflowConfiguration() {
-		global $wgTranslateWorkflowStates;
-		if ( !$wgTranslateWorkflowStates ) {
-			// Not configured
-			$conf = [];
-		} else {
-			$conf = $wgTranslateWorkflowStates;
-		}
-
-		return $conf;
-	}
-
 	/**
 	 * Get the message group workflow state configuration.
 	 * @return MessageGroupStates
 	 */
 	public function getMessageGroupStates() {
-		// @todo Replace deprecated call.
-		$conf = $this->getWorkflowConfiguration();
+		global $wgTranslateWorkflowStates;
+		$conf = $wgTranslateWorkflowStates ?: [];
 
 		Hooks::run( 'Translate:modifyMessageGroupStates', [ $this->getId(), &$conf ] );
 
 		return new MessageGroupStates( $conf );
 	}
 
-	/**
-	 * Get all the translatable languages for a group, considering the whitelisting
-	 * and blacklisting.
-	 * @return array|null The language codes as array keys.
-	 */
+	/** @inheritDoc */
 	public function getTranslatableLanguages() {
-		global $wgTranslateBlacklist;
-
 		$groupConfiguration = $this->getConfiguration();
 		if ( !isset( $groupConfiguration['LANGUAGES'] ) ) {
 			// No LANGUAGES section in the configuration.
@@ -331,40 +297,41 @@ abstract class MessageGroupBase implements MessageGroup {
 		$codes = array_flip( array_keys( TranslateUtils::getLanguageNames( null ) ) );
 
 		$lists = $groupConfiguration['LANGUAGES'];
-		if ( isset( $lists['blacklist'] ) ) {
-			$blacklist = $lists['blacklist'];
-			if ( $blacklist === '*' ) {
-				// All languages blacklisted
+		$exclusionList = $lists['exclude'] ?? null;
+		if ( $exclusionList !== null ) {
+			if ( $exclusionList === '*' ) {
+				// All excluded languages
 				$codes = [];
-			} elseif ( is_array( $blacklist ) ) {
-				foreach ( $blacklist as $code ) {
+			} elseif ( is_array( $exclusionList ) ) {
+				foreach ( $exclusionList as $code ) {
 					unset( $codes[$code] );
 				}
 			}
 		} else {
-			// Treat lack of explicit blacklist the same as blacklisting everything. This way,
-			// when one defines only whitelist, it means that only those languages are allowed.
+			// Treat lack of explicit exclusion list the same as excluding everything. This way,
+			// when one defines only inclusions, it means that only those languages are allowed.
 			$codes = [];
 		}
 
-		// DWIM with $wgTranslateBlacklist, e.g. languages in that list should not unexpectedly
-		// be enabled when a whitelist is used to whitelist any language.
+		$disabledLanguages = Services::getInstance()->getConfigHelper()->getDisabledTargetLanguages();
+		// DWIM with $wgTranslateDisabledTargetLanguages, e.g. languages in that list should not unexpectedly
+		// be enabled when an inclusion list is used to include any language.
 		$checks = [ $this->getId(), strtok( $this->getId(), '-' ), '*' ];
 		foreach ( $checks as $check ) {
-			if ( isset( $wgTranslateBlacklist[ $check ] ) ) {
-				foreach ( array_keys( $wgTranslateBlacklist[ $check ] ) as $blacklistedCode ) {
-					unset( $codes[ $blacklistedCode ] );
+			if ( isset( $disabledLanguages[ $check ] ) ) {
+				foreach ( array_keys( $disabledLanguages[ $check ] ) as $excludedCode ) {
+					unset( $codes[ $excludedCode ] );
 				}
 			}
 		}
 
-		if ( isset( $lists['whitelist'] ) ) {
-			$whitelist = $lists['whitelist'];
-			if ( $whitelist === '*' ) {
-				// All languages whitelisted (except $wgTranslateBlacklist)
+		$inclusionList = $lists['include'] ?? null;
+		if ( $inclusionList !== null ) {
+			if ( $inclusionList === '*' ) {
+				// All languages included (except $wgTranslateDisabledTargetLanguages)
 				return null;
-			} elseif ( is_array( $whitelist ) ) {
-				foreach ( $whitelist as $code ) {
+			} elseif ( is_array( $inclusionList ) ) {
+				foreach ( $inclusionList as $code ) {
 					$codes[$code] = true;
 				}
 			}
@@ -373,13 +340,7 @@ abstract class MessageGroupBase implements MessageGroup {
 		return $codes;
 	}
 
-	/**
-	 * List of available message types mapped to the classes
-	 * implementing them. Default implementation (all).
-	 *
-	 * @return array
-	 */
-	public function getTranslationAids() {
-		return TranslationAid::getTypes();
+	public function getSupportConfig(): ?array {
+		return $this->getFromConf( 'BASIC', 'support' );
 	}
 }

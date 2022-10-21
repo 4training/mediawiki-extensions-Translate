@@ -13,23 +13,30 @@
 class TranslateMetadata {
 	/** @var array Map of (group => key => value) */
 	private static $cache = [];
+	/** @var array */
+	private static $priorityCache;
 
-	/** @param string[] $groups List of translate groups */
-	public static function preloadGroups( array $groups ) {
+	/**
+	 * @param string[] $groups List of translate groups
+	 * @param string $caller
+	 */
+	public static function preloadGroups( array $groups, string $caller ) {
 		$missing = array_keys( array_diff_key( array_flip( $groups ), self::$cache ) );
 		if ( !$missing ) {
 			return;
 		}
 
+		$fname = __METHOD__ . " (for $caller)";
+
 		self::$cache += array_fill_keys( $missing, null ); // cache negatives
 
 		$dbr = TranslateUtils::getSafeReadDB();
-		$conds = count( $missing ) <= 500 ? [ 'tmd_group' => $missing ] : [];
+		$conds = count( $missing ) <= 500 ? [ 'tmd_group' => array_map( 'strval', $missing ) ] : [];
 		$res = $dbr->select(
 			'translate_metadata',
 			[ 'tmd_group', 'tmd_key', 'tmd_value' ],
 			$conds,
-			__METHOD__
+			$fname
 		);
 		foreach ( $res as $row ) {
 			self::$cache[$row->tmd_group][$row->tmd_key] = $row->tmd_value;
@@ -43,7 +50,7 @@ class TranslateMetadata {
 	 * @return string|bool
 	 */
 	public static function get( $group, $key ) {
-		self::preloadGroups( [ $group ] );
+		self::preloadGroups( [ $group ], __METHOD__ );
 
 		return self::$cache[$group][$key] ?? false;
 	}
@@ -68,10 +75,10 @@ class TranslateMetadata {
 	 * value if already existing.
 	 * @param string $group The group id
 	 * @param string $key Metadata key
-	 * @param string $value Metadata value
+	 * @param string|false $value Metadata value, false deletes from cache
 	 */
 	public static function set( $group, $key, $value ) {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$data = [ 'tmd_group' => $group, 'tmd_key' => $key, 'tmd_value' => $value ];
 		if ( $value === false ) {
 			unset( $data['tmd_value'] );
@@ -86,6 +93,8 @@ class TranslateMetadata {
 			);
 			self::$cache[$group][$key] = $value;
 		}
+
+		self::$priorityCache = null;
 	}
 
 	/**
@@ -132,9 +141,111 @@ class TranslateMetadata {
 	 * @since 2012-05-09
 	 */
 	public static function deleteGroup( $groupId ) {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$conds = [ 'tmd_group' => $groupId ];
 		$dbw->delete( 'translate_metadata', $conds, __METHOD__ );
 		self::$cache[$groupId] = null;
+		unset( self::$priorityCache[ $groupId ] );
+	}
+
+	public static function isExcluded( string $groupId, string $code ): bool {
+		if ( self::$priorityCache === null ) {
+			$db = TranslateUtils::getSafeReadDB();
+			$res = $db->select(
+				[
+					'a' => 'translate_metadata',
+					'b' => 'translate_metadata'
+				],
+				[
+					'group' => 'b.tmd_group',
+					'langs' => 'b.tmd_value',
+				],
+				[],
+				__METHOD__,
+				[],
+				[
+					'b' => [
+						'INNER JOIN',
+						[
+							'a.tmd_group = b.tmd_group',
+							'a.tmd_key' => 'priorityforce',
+							'a.tmd_value' => 'on',
+							'b.tmd_key' => 'prioritylangs',
+						]
+					]
+				]
+			);
+
+			self::$priorityCache = [];
+			foreach ( $res as $row ) {
+				self::$priorityCache[$row->group] =
+					array_flip( explode( ',', $row->langs ) );
+			}
+		}
+
+		$isDiscouraged = MessageGroups::getPriority( $groupId ) === 'discouraged';
+		$hasLimitedLanguages = isset( self::$priorityCache[$groupId] );
+		$isLanguageIncluded = isset( self::$priorityCache[$groupId][$code] );
+
+		return $isDiscouraged || ( $hasLimitedLanguages && !$isLanguageIncluded );
+	}
+
+	/**
+	 * Do a query optimized for page list in Special:PageTranslation
+	 * @param string[] $groupIds
+	 * @param string[] $keys Which metadata keys to load
+	 * @return array<string,array<string,string>>
+	 */
+	public static function loadBasicMetadataForTranslatablePages( array $groupIds, array $keys ): array {
+		$db = TranslateUtils::getSafeReadDB();
+		$res = $db->select(
+			'translate_metadata',
+			[ 'tmd_group', 'tmd_key', 'tmd_value' ],
+			[
+				'tmd_group' => $groupIds,
+				'tmd_key' => $keys,
+			],
+			__METHOD__
+		);
+
+		$ret = [];
+		foreach ( $res as $row ) {
+			$ret[$row->tmd_group][$row->tmd_key] = $row->tmd_value;
+		}
+
+		return $ret;
+	}
+
+	/**
+	 * @param string $oldGroupId
+	 * @param string $newGroupId
+	 * @param string[] $metadataKeysToMove
+	 * @return void
+	 */
+	public static function moveMetadata(
+		string $oldGroupId,
+		string $newGroupId,
+		array $metadataKeysToMove
+	): void {
+		self::preloadGroups( [ $oldGroupId, $newGroupId ], __METHOD__ );
+		foreach ( $metadataKeysToMove as $type ) {
+			$value = self::get( $oldGroupId, $type );
+			if ( $value !== false ) {
+				self::set( $oldGroupId, $type, false );
+				self::set( $newGroupId, $type, $value );
+			}
+		}
+	}
+
+	/**
+	 * @param string $groupId
+	 * @param string[] $metadataKeys
+	 * @return void
+	 */
+	public static function clearMetadata( string $groupId, array $metadataKeys ): void {
+		// remove the entries from metadata table.
+		foreach ( $metadataKeys as $type ) {
+			self::set( $groupId, $type, false );
+		}
 	}
 }

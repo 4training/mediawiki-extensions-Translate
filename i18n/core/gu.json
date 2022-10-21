@@ -154,7 +154,6 @@
 	"tux-status-translated": "ભાષાંતરીત",
 	"tux-status-saving": "સંગ્રહ કરે છે...",
 	"tux-status-unsaved": "અસંગ્રહિત",
-	"tux-editor-placeholder": "તમારૂં ભાષાંતરણ",
 	"tux-editor-paste-original-button-label": "સ્રોત લખાણ વાપરો",
 	"tux-editor-cancel-button-label": "રદ કરો",
 	"tux-editor-confirm-button-label": "અનુવાદની ખાતરી કરો",
@@ -187,5 +186,6 @@
 	"tux-editor-message-tools-translations": "બધાં ભાષાંતરો",
 	"tux-editor-message-tools-linktothis": "આ સંદેશા પરની કડી",
 	"tux-editor-loading": "લવાઇ રહ્યું છે...",
-	"translate-search-more-languages-info": "$1 વધુ {{PLURAL:$1|ભાષા|ભાષાઓ}}"
+	"translate-search-more-languages-info": "$1 વધુ {{PLURAL:$1|ભાષા|ભાષાઓ}}",
+	"translate-messagebundle-error-empty-value": "\"$1\" કળને કોઇ કિંમત નથી"
 }

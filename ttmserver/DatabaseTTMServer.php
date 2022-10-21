@@ -21,7 +21,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 	protected $sids;
 
 	/**
-	 * @param int $mode DB_REPLICA|DB_MASTER
+	 * @param int $mode DB_REPLICA|DB_PRIMARY
 	 * @return \Wikimedia\Rdbms\IDatabase
 	 */
 	protected function getDB( $mode = DB_REPLICA ) {
@@ -50,7 +50,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 		}
 
 		$context = Title::makeTitle( $handle->getTitle()->getNamespace(), $mkey );
-		$dbw = $this->getDB( DB_MASTER );
+		$dbw = $this->getDB( DB_PRIMARY );
 		/* Check that the definition exists and fetch the sid. If not, add
 		 * the definition and retrieve the sid. If the definition changes,
 		 * we will create a new entry - otherwise we could at some point
@@ -94,7 +94,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 			'tms_context' => $context->getPrefixedText(),
 		];
 
-		$dbw = $this->getDB( DB_MASTER );
+		$dbw = $this->getDB( DB_PRIMARY );
 		$dbw->insert( 'translate_tms', $row, __METHOD__ );
 		$sid = $dbw->insertId();
 
@@ -144,11 +144,10 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 	}
 
 	public function beginBootstrap() {
-		$dbw = $this->getDB( DB_MASTER );
+		$dbw = $this->getDB( DB_PRIMARY );
 		$dbw->delete( 'translate_tms', '*', __METHOD__ );
 		$dbw->delete( 'translate_tmt', '*', __METHOD__ );
 		$dbw->delete( 'translate_tmf', '*', __METHOD__ );
-		// @phan-suppress-next-line PhanUndeclaredMethod
 		$table = $dbw->tableName( 'translate_tmf' );
 		try {
 			$dbw->query( "DROP INDEX tmf_text ON $table", __METHOD__ );
@@ -184,7 +183,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 			];
 		}
 
-		$dbw = $this->getDB( DB_MASTER );
+		$dbw = $this->getDB( DB_PRIMARY );
 		$dbw->insert( 'translate_tmt', $rows, __METHOD__ );
 		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
 		$lbFactory->waitForReplication( [ 'ifWritesSince' => 10 ] );
@@ -194,8 +193,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 	}
 
 	public function endBootstrap() {
-		$dbw = $this->getDB( DB_MASTER );
-		// @phan-suppress-next-line PhanUndeclaredMethod
+		$dbw = $this->getDB( DB_PRIMARY );
 		$table = $dbw->tableName( 'translate_tmf' );
 		$dbw->query( "CREATE FULLTEXT INDEX tmf_text ON $table (tmf_text)", __METHOD__ );
 	}
@@ -276,7 +274,7 @@ class DatabaseTTMServer extends TTMServer implements WritableTTMServer, Readable
 					'context' => $row->tms_context,
 					'location' => $row->tms_context . '/' . $targetLanguage,
 					'quality' => $quality,
-					'wiki' => $row->tms_wiki ?? wfWikiID(),
+					'wiki' => $row->tms_wiki ?? WikiMap::getCurrentWikiId(),
 				];
 			}
 		}

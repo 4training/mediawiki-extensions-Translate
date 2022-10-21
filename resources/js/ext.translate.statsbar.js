@@ -22,6 +22,7 @@
 		this.$container = $( container );
 		this.group = options.group;
 		this.language = options.language;
+		this.onlyLoadCurrentGroupData = options.onlyLoadCurrentGroupData;
 		this.$statsBar = null;
 		this.elements = null;
 		this.init();
@@ -29,48 +30,38 @@
 
 	LanguageStatsBar.prototype = {
 		init: function () {
-			if ( mw.translate.languagestats[ this.language ] ) {
-				this.render();
-			} else {
-				mw.translate.loadLanguageStats( this.language )
-					.done( this.render.bind( this ) );
-			}
+			this.loadStats().done( this.render.bind( this ) );
 		},
 
 		/**
 		 * Listen for the change events and update the statsbar
 		 */
 		listen: function () {
-			var i,
-				statsbar = this,
-				languageStats = mw.translate.languagestats[ this.language ];
-
+			var statsbar = this;
 			statsbar.$statsBar.on( 'change', function ( event, to, from ) {
-				for ( i = 0; i < languageStats.length; i++ ) {
-					if ( languageStats[ i ].group === statsbar.group ) {
-						// Changing a proofread message does not create a new translation
-						if ( to === 'translated' && from !== 'proofread' ) {
-							languageStats[ i ].translated++;
-						}
-						if ( to === 'proofread' ) {
-							languageStats[ i ].proofread++;
-						}
-						if ( to === 'fuzzy' ) {
-							languageStats[ i ].fuzzy++;
-						}
+				// This updates the value in mw.translate.languagestats as a reference to
+				// the object is returned here.
+				var groupLanguageStats = statsbar.getGroupStatsWithFallback();
+				// Changing a proofread message does not create a new translation
+				if ( to === 'translated' && from !== 'proofread' ) {
+					groupLanguageStats.translated++;
+				}
+				if ( to === 'proofread' ) {
+					groupLanguageStats.proofread++;
+				}
+				if ( to === 'fuzzy' ) {
+					groupLanguageStats.fuzzy++;
+				}
 
-						if ( from === 'fuzzy' ) {
-							languageStats[ i ].fuzzy--;
-						}
-						if ( from === 'proofread' ) {
-							languageStats[ i ].proofread--;
-						}
-						// Proofreading a message does not remove translation
-						if ( from === 'translated' && to !== 'proofread' ) {
-							languageStats[ i ].translated--;
-						}
-						break;
-					}
+				if ( from === 'fuzzy' ) {
+					groupLanguageStats.fuzzy--;
+				}
+				if ( from === 'proofread' ) {
+					groupLanguageStats.proofread--;
+				}
+				// Proofreading a message does not remove translation
+				if ( from === 'translated' && to !== 'proofread' ) {
+					groupLanguageStats.translated--;
 				}
 
 				// Update the stats bar
@@ -115,16 +106,15 @@
 		},
 
 		update: function () {
-			var proofread, translated, fuzzy, untranslated,
-				stats = this.getStatsForGroup( this.group );
+			var stats = this.getGroupStatsWithFallback();
 
-			proofread = 100 * stats.proofread / stats.total;
+			var proofread = 100 * stats.proofread / stats.total;
 			// Proofread messages are also translated, so remove those for
 			// the bar showing only translated count.
-			translated = stats.translated - stats.proofread;
+			var translated = stats.translated - stats.proofread;
 			translated = 100 * translated / stats.total;
-			fuzzy = 100 * stats.fuzzy / stats.total;
-			untranslated = 100 - proofread - translated - fuzzy;
+			var fuzzy = 100 * stats.fuzzy / stats.total;
+			var untranslated = 100 - proofread - translated - fuzzy;
 
 			this.elements.$proofread[ 0 ].style.width = proofread + '%';
 			this.elements.$translated[ 0 ].style.width = translated + '%';
@@ -146,16 +136,26 @@
 			}
 		},
 
-		getStatsForGroup: function ( group ) {
-			var i,
-				languageStats = mw.translate.languagestats[ this.language ];
-
-			for ( i = 0; i < languageStats.length; i++ ) {
-				if ( languageStats[ i ].group === group ) {
-					return languageStats[ i ];
+		getGroupStatsWithFallback: function () {
+			var statsData = mw.translate.languagestats[ this.language ] || [];
+			for ( var i = 0; i < statsData.length; i++ ) {
+				if ( statsData[ i ].group === this.group ) {
+					return statsData[ i ];
 				}
 			}
 
+			return this.getEmptyStats();
+		},
+
+		loadStats: function () {
+			if ( this.onlyLoadCurrentGroupData ) {
+				return mw.translate.loadMessageGroupStatsForItem( this.language, this.group );
+			} else {
+				return mw.translate.loadMessageGroupStatsForLanguage( this.language );
+			}
+		},
+
+		getEmptyStats: function () {
 			return {
 				proofread: 0,
 				total: 0,

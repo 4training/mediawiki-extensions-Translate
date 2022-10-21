@@ -78,6 +78,8 @@
 	display: none;
 }
 
+.mw-message-box-warning.mw-translate-smg-submitted,
+/** MW < 1.38 **/
 .warningbox.mw-translate-smg-submitted {
 	margin-top: 2.5em;
 }
@@ -148,4 +150,16 @@
 	float: left;
 	text-align: right;
 	margin-right: 5px;
+}
+
+.client-nojs .smg-group-sync-cache-info__resolve-action {
+	pointer-events: none;
+	text-decoration: line-through;
+	color: inherit;
+}
+
+.smg-group-sync-cache-info__sync-actions .loading {
+	pointer-events: none;
+	color: inherit;
+	text-decoration: none;
 }

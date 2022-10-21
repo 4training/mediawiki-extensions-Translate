@@ -7,7 +7,8 @@ use Language;
 use MediaWiki\Config\ServiceOptions;
 use MessageGroups;
 use TranslateUtils;
-use Wikimedia\ObjectFactory;
+use Wikimedia\ObjectFactory\ObjectFactory;
+use const TS_MW;
 
 /**
  * Provides translation stats data
@@ -44,7 +45,7 @@ class TranslationStatsDataProvider {
 	 * @param Language $language
 	 * @return array ( string => array ) Data indexed by their date labels.
 	 */
-	public function getGraphData( TranslationStatsGraphOptions $opts, Language $language ) {
+	public function getGraphData( TranslationStatsGraphOptions $opts, Language $language ): array {
 		$dbr = wfGetDB( DB_REPLICA );
 
 		$so = $this->getStatsProvider( $opts->getValue( 'count' ), $opts );
@@ -97,6 +98,8 @@ class TranslationStatsDataProvider {
 			$cutoff += $increment;
 			$data[$date] = $defaults;
 		}
+		// Ensure $lastValue is within range, in case the loop above jumped over it
+		$data[$language->sprintfDate( $dateFormat, wfTimestamp( TS_MW, $lastValue ) )] = $defaults;
 
 		// Processing
 		$labelToIndex = array_flip( $labels );
@@ -107,7 +110,7 @@ class TranslationStatsDataProvider {
 				continue;
 			}
 
-			foreach ( (array)$indexLabels as $i ) {
+			foreach ( $indexLabels as $i ) {
 				if ( !isset( $labelToIndex[$i] ) ) {
 					continue;
 				}
@@ -144,10 +147,13 @@ class TranslationStatsDataProvider {
 			}
 		}
 
+		// Indicator that the last value is not full
 		if ( $end === null ) {
-			$last = array_splice( $data, -1, 1 );
-			// Indicator that the last value is not full
-			$data[key( $last ) . '*'] = current( $last );
+			// Warning: do not user array_splice, which does not preserve numerical keys
+			$last = end( $data );
+			$key = key( $data );
+			unset( $data[$key] );
+			$data[ "$key*" ] = $last;
 		}
 
 		return [ $labels, $data ];
@@ -166,7 +172,7 @@ class TranslationStatsDataProvider {
 	}
 
 	/**
-	 * Gets the closest earlieast timestamp that corresponds to start of a
+	 * Gets the closest earliest timestamp that corresponds to start of a
 	 * period in given scale, like, midnight, monday or first day of the month.
 	 */
 	private static function roundTimestampToCutoff(
@@ -195,6 +201,13 @@ class TranslationStatsDataProvider {
 			}
 			// Round to nearest day
 			$cutoff -= ( $cutoff % 86400 );
+		} elseif ( $scale === 'years' ) {
+			// Go Xwards/ day by day until we are on the first day of the year
+			while ( date( 'z', $cutoff ) !== '0' ) {
+				$cutoff += $dir * 86400;
+			}
+			// Round to nearest day
+			$cutoff -= ( $cutoff % 86400 );
 		}
 
 		return $cutoff;
@@ -216,7 +229,9 @@ class TranslationStatsDataProvider {
 	 */
 	private static function getIncrement( string $scale ): int {
 		$increment = 3600 * 24;
-		if ( $scale === 'months' ) {
+		if ( $scale === 'years' ) {
+			$increment = 3600 * 24 * 350;
+		} elseif ( $scale === 'months' ) {
 			/* We use increment to fill up the values. Use number small enough
 			 * to ensure we hit each month */
 			$increment = 3600 * 24 * 15;
@@ -229,5 +244,3 @@ class TranslationStatsDataProvider {
 		return $increment;
 	}
 }
-
-class_alias( TranslationStatsDataProvider::class, '\MediaWiki\Extensions\Translate\TranslationStatsDataProvider' );

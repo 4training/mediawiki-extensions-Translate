@@ -1,12 +1,15 @@
 {
 	"@metadata": {
 		"authors": [
-			"Arystanbek"
+			"Arystanbek",
+			"U.ayaao.p"
 		]
 	},
 	"pagetranslation": "Бет аудармасы",
 	"right-pagetranslation": "Аударма үшін беттердің нұсқаларын белгілеу",
 	"action-pagetranslation": "аударуға келетін беттерді басқару",
+	"tps-edit-sourcepage-ve-warning-title": "Ескерту: Қолдау көрсейтілмейтін бет",
+	"tps-edit-sourcepage-ve-warning-button": "OK",
 	"tpt-section": "$1 аударма бірлігі",
 	"tpt-section-new": "Жаңа аударма бірлігі.\nАтауы: $1",
 	"tpt-section-deleted": "$1 аударма бірлігі",
@@ -75,13 +78,13 @@
 	"pt-movepage-action-other": "Нысанасын өзгерту",
 	"pt-movepage-logreason": "«$1» аударылатын бетінің бөлігі.",
 	"pt-deletepage-lang-title": "«$1» аударылатын бетін жойылуда.",
-	"pt-deletepage-full-title": "«$1» аударылатын бетін жойылуда.",
+	"pt-deletepage-tp-title": "«$1» аударылатын бетін жойылуда.",
 	"pt-deletepage-invalid-title": "Көрсетілген бет жарамсыз.",
 	"pt-deletepage-action-check": "Жойылатын беттер тізімі",
 	"pt-deletepage-action-perform": "Жоюды орындау",
 	"pt-deletepage-action-other": "Нысанасын өзгерту",
 	"pt-deletepage-lang-legend": "Аударма бетті жою",
-	"pt-deletepage-full-legend": "Аударылатын бетті жою",
+	"pt-deletepage-tp-legend": "Аударылатын бетті жою",
 	"pt-deletepage-any-legend": "Аударылатын бетті немесе аударма бетті жою",
 	"pt-deletepage-current": "Бет атауы:",
 	"pt-deletepage-reason": "Себебі:",

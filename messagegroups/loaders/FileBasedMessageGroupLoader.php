@@ -103,7 +103,7 @@ class FileBasedMessageGroupLoader extends MessageGroupLoader
 			$yaml = file_get_contents( $configFile );
 			$fgroups = $parser->getHopefullyValidConfigurations(
 				$yaml,
-				function ( $index, $config, $errmsg ) use ( $configFile ) {
+				static function ( $index, $config, $errmsg ) use ( $configFile ) {
 					trigger_error( "Document $index in $configFile is invalid: $errmsg", E_USER_WARNING );
 				}
 			);
@@ -111,7 +111,7 @@ class FileBasedMessageGroupLoader extends MessageGroupLoader
 			foreach ( $fgroups as $id => $conf ) {
 				if ( !empty( $conf['AUTOLOAD'] ) && is_array( $conf['AUTOLOAD'] ) ) {
 					$dir = dirname( $configFile );
-					$additions = array_map( function ( $file ) use ( $dir ) {
+					$additions = array_map( static function ( $file ) use ( $dir ) {
 						return "$dir/$file";
 					}, $conf['AUTOLOAD'] );
 					self::appendAutoloader( $additions, $autoload );
@@ -173,5 +173,23 @@ class FileBasedMessageGroupLoader extends MessageGroupLoader
 		}
 
 		self::appendAutoloader( $autoload, $wgAutoloadClasses );
+	}
+
+	/**
+	 * Safely merges first array to second array, throwing warning on duplicates and removing
+	 * duplicates from the first array.
+	 * @param array $additions Things to append
+	 * @param array &$to Where to append
+	 */
+	private static function appendAutoloader( array $additions, array &$to ) {
+		foreach ( $additions as $class => $file ) {
+			if ( isset( $to[$class] ) && $to[$class] !== $file ) {
+				$msg = "Autoload conflict for $class: {$to[$class]} !== $file";
+				trigger_error( $msg, E_USER_WARNING );
+				continue;
+			}
+
+			$to[$class] = $file;
+		}
 	}
 }

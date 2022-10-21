@@ -8,6 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionRecord;
@@ -636,7 +637,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$joins = [ 'revtag' =>
 		[
 			'LEFT JOIN',
-			[ 'page_id=rt_page', 'page_latest=rt_revision', 'rt_type' => RevTag::getType( 'fuzzy' ) ]
+			[ 'page_id=rt_page', 'page_latest=rt_revision', 'rt_type' => RevTagStore::FUZZY_TAG ]
 		]
 		];
 
@@ -817,7 +818,7 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		$messages = [];
 		$definitions = $this->definitions->getDefinitions();
 		$revStore = MediaWikiServices::getInstance()->getRevisionStore();
-		$queryFlags = TranslateUtils::shouldReadFromMaster() ? $revStore::READ_LATEST : 0;
+		$queryFlags = TranslateUtils::shouldReadFromPrimary() ? $revStore::READ_LATEST : 0;
 		foreach ( array_keys( $this->keys ) as $mkey ) {
 			$messages[$mkey] = new ThinMessage( $mkey, $definitions[$mkey] );
 		}
@@ -907,15 +908,15 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 	 * @param mixed $offset
 	 * @return bool
 	 */
-	public function offsetExists( $offset ) {
+	public function offsetExists( $offset ): bool {
 		return isset( $this->keys[$offset] );
 	}
 
 	/**
 	 * @param mixed $offset
-	 * @return mixed
+	 * @return ?TMessage
 	 */
-	public function offsetGet( $offset ) {
+	public function offsetGet( $offset ): ?TMessage {
 		return $this->messages[$offset] ?? null;
 	}
 
@@ -923,12 +924,12 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 	 * @param mixed $offset
 	 * @param mixed $value
 	 */
-	public function offsetSet( $offset, $value ) {
+	public function offsetSet( $offset, $value ): void {
 		$this->messages[$offset] = $value;
 	}
 
 	/** @param mixed $offset */
-	public function offsetUnset( $offset ) {
+	public function offsetUnset( $offset ): void {
 		unset( $this->keys[$offset] );
 	}
 
@@ -938,11 +939,19 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 	 * Fail fast if trying to access unknown properties. @{
 	 * @param string $name
 	 * @throws MWException
+	 * @return never
 	 */
 	public function __get( $name ) {
 		throw new MWException( __METHOD__ . ": Trying to access unknown property $name" );
 	}
 
+	/**
+	 * Fail fast if trying to access unknown properties.
+	 * @param string $name
+	 * @param mixed $value
+	 * @throws MWException
+	 * @return never
+	 */
 	public function __set( $name, $value ) {
 		throw new MWException( __METHOD__ . ": Trying to modify unknown property $name" );
 	}
@@ -952,10 +961,11 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 	/**
 	 * Iterator method. @{
 	 */
-	public function rewind() {
+	public function rewind(): void {
 		reset( $this->keys );
 	}
 
+	#[\ReturnTypeWillChange]
 	public function current() {
 		if ( !count( $this->keys ) ) {
 			return false;
@@ -965,19 +975,19 @@ class MessageCollection implements ArrayAccess, Iterator, Countable {
 		return $this->messages[key( $this->keys )];
 	}
 
-	public function key() {
+	public function key(): ?string {
 		return key( $this->keys );
 	}
 
-	public function next() {
-		return next( $this->keys );
+	public function next(): void {
+		next( $this->keys );
 	}
 
-	public function valid() {
+	public function valid(): bool {
 		return isset( $this->messages[key( $this->keys )] );
 	}
 
-	public function count() {
+	public function count(): int {
 		return count( $this->keys() );
 	}
 
@@ -997,11 +1007,16 @@ class MessageDefinitions {
 	/** @var Title[] */
 	private $pages;
 
+	/**
+	 * @param string[] $messages
+	 * @param int|false $namespace
+	 */
 	public function __construct( array $messages, $namespace = false ) {
 		$this->namespace = $namespace;
 		$this->messages = $messages;
 	}
 
+	/** @return string[] */
 	public function getDefinitions() {
 		return $this->messages;
 	}

@@ -34,14 +34,13 @@
 	}
 
 	function removeSelectedRequests() {
-		var $nextRequest,
-			$selectedRequests = $( '.request-selector:checked' );
+		var $selectedRequests = $( '.request-selector:checked' );
 
-		$nextRequest = $selectedRequests
+		var $nextRequest = $selectedRequests
 			.first() // First selected request
 			.closest( '.request' ) // The request corresponds that checkbox
 			.prevAll( ':not(.hide)' ) // Go back till a non-hidden request
-			.first(); // The above selecter gives list from bottom to top. Select the bottom one.
+			.first(); // The above selector gives list from bottom to top. Select the bottom one.
 
 		$selectedRequests.closest( '.request' ).remove();
 
@@ -67,15 +66,14 @@
 	 * @param {Object} request The request data set from backend on request items
 	 */
 	function displayRequestDetails( request ) {
-		var storage,
-			$reminderStatus = $( '<span>' ).addClass( 'reminder-status' ),
+		var $reminderStatus = $( '<span>' ).addClass( 'reminder-status' ),
 			$detailsPane = $( '.details.pane' );
-
 		if ( request.reminderscount ) {
+			var agoText = moment.isMoment( request.lastreminder ) ? moment( request.lastreminder ).fromNow() : request.lastreminder;
 			$reminderStatus.text( mw.msg(
 				'tsb-reminder-sent',
 				request.reminderscount,
-				request.lastreminder
+				agoText
 			) );
 		}
 
@@ -103,6 +101,8 @@
 								do: 'remind',
 								userid: request.userid
 							} ).done( function () {
+								request.lastreminder = moment();
+								request.reminderscount++;
 								$reminderStatus.text( mw.msg( 'tsb-reminder-sent-new' ) );
 							} ).fail( function () {
 								$reminderStatus.text( mw.msg( 'tsb-reminder-failed' ) );
@@ -182,14 +182,27 @@
 			}
 		}
 
-		// @todo: move higher in the tree
-		storage = new mw.translate.TranslationStashStorage();
-		storage.getUserTranslations( request.username ).done( showTranslations );
+		getUserTranslations( request.username ).done( showTranslations );
+	}
+
+	/**
+	 * Get the current users translations.
+	 *
+	 * @param {string} user User name
+	 * @return {jQuery.Promise}
+	 */
+	function getUserTranslations( user ) {
+		var api = new mw.Api();
+
+		return api.postWithToken( 'csrf', {
+			action: 'translationstash',
+			subaction: 'query',
+			username: user
+		} );
 	}
 
 	function showTranslations( translations ) {
-		var gender,
-			$target = $( '.translations' );
+		var $target = $( '.translations' );
 
 		$target.empty();
 
@@ -204,7 +217,7 @@
 			return;
 		}
 
-		gender = $( '.requests-list .request.selected' ).data( 'data' ).gender;
+		var gender = $( '.requests-list .request.selected' ).data( 'data' ).gender;
 		$target.append(
 			$( '<div>' )
 				.addClass( 'row title' )
@@ -349,12 +362,11 @@
 	 * or hides that link if there are no such requests.
 	 */
 	function indicateOlderRequests() {
-		var oldRequestsCount, oldRequestsCountString,
-			$olderRequests = getOlderRequests(),
+		var $olderRequests = getOlderRequests(),
 			$olderRequestsIndicator = $( '.older-requests-indicator' );
 
-		oldRequestsCount = $olderRequests.length;
-		oldRequestsCountString = mw.language.convertNumber( oldRequestsCount );
+		var oldRequestsCount = $olderRequests.length;
+		var oldRequestsCountString = mw.language.convertNumber( oldRequestsCount );
 
 		if ( oldRequestsCount ) {
 			$olderRequestsIndicator
@@ -404,8 +416,7 @@
 	}
 
 	function selectAllRequests() {
-		var selectedCount,
-			$requestCheckboxes = $( '.request-selector' ),
+		var $requestCheckboxes = $( '.request-selector' ),
 			$detailsPane = $( '.details.pane' ),
 			$selectAll = $( '.request-selector-all' ),
 			$requestRows = $( '.requests .request' ),
@@ -419,6 +430,7 @@
 			} );
 		} );
 
+		var selectedCount;
 		if ( selectAllChecked ) {
 			displayOnMultipleSelection();
 			$visibleRows.addClass( 'selected' );
@@ -476,8 +488,7 @@
 	 * @param {jQuery.Event} e
 	 */
 	function requestSelectHandler( e ) {
-		var checkedCount, $checkedBoxes,
-			request = e.target,
+		var request = e.target,
 			$detailsPane = $( '.details.pane' ),
 			$requestCheckboxes = $( '.request-selector' ),
 			$selectAll = $( '.request-selector-all' ),
@@ -492,8 +503,8 @@
 			$thisRequestRow.removeClass( 'selected' );
 		}
 
-		$checkedBoxes = $requestCheckboxes.filter( ':checked' );
-		checkedCount = $checkedBoxes.length;
+		var $checkedBoxes = $requestCheckboxes.filter( ':checked' );
+		var checkedCount = $checkedBoxes.length;
 
 		if ( checkedCount === $requestCheckboxes.length ) {
 			// All boxes are selected
@@ -561,10 +572,9 @@
 	}
 
 	LanguageFilter.prototype.init = function () {
-		var languageFilter = this,
-			$clearButton;
+		var languageFilter = this;
 
-		$clearButton = $( '<button>' )
+		var $clearButton = $( '<button>' )
 			.addClass( 'clear-language-selector hide' )
 			.text( '×' );
 
@@ -654,12 +664,11 @@
 	};
 
 	TranslatorSearch.prototype.keyup = function () {
-		var query,
-			translatorSearch = this;
+		var translatorSearch = this;
 
 		// Respond to the keypress events after a small timeout to avoid freeze when typed fast
 		delay( function () {
-			query = translatorSearch.$search.val().trim().toLowerCase();
+			var query = translatorSearch.$search.val().trim().toLowerCase();
 			translatorSearch.filter( query );
 		}, 300 );
 	};
@@ -685,14 +694,13 @@
 	};
 
 	function updateAfterFiltering() {
-		var $selectedRequests,
-			$firstVisibleUser = $( '.request:not(.hide)' ).first();
+		var $firstVisibleUser = $( '.request:not(.hide)' ).first();
 
 		if ( $firstVisibleUser.length ) {
 			$firstVisibleUser.trigger( 'click' );
 		} else {
 			$( '.details.pane' ).empty();
-			$selectedRequests = $( '.request-selector:checked' );
+			var $selectedRequests = $( '.request-selector:checked' );
 			$selectedRequests.closest( '.request' ).removeClass( 'selected' );
 			$selectedRequests.prop( {
 				checked: false,

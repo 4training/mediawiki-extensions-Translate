@@ -6,23 +6,23 @@ class MessageGroupWANCacheTest extends MediaWikiIntegrationTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->mgCache = new MessageGroupWANCache(
-			new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] )
+			new WANObjectCache( [ 'cache' => new HashBagOStuff() ] )
 		);
 	}
 
 	public function testCacheKeyConfiguration() {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Invalid cache key' );
 
 		$this->mgCache->configure( [
-			'regenerator' => function () {
+			'regenerator' => static function () {
 				return 'hello';
 			}
 		] );
 	}
 
 	public function testCacheRegeneratorConfig() {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Invalid regenerator' );
 
 		$this->mgCache->configure( [
@@ -32,7 +32,7 @@ class MessageGroupWANCacheTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testNoConfigureCall() {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'configure function' );
 
 		$this->mgCache->setValue( [ 'abc' ] );
@@ -42,7 +42,7 @@ class MessageGroupWANCacheTest extends MediaWikiIntegrationTestCase {
 		$cacheData = [ 'dummy', 'data' ];
 		$this->mgCache->configure( [
 			'key' => 'mg-wan-test',
-			'regenerator' => function () use ( $cacheData ) {
+			'regenerator' => static function () use ( $cacheData ) {
 				return $cacheData;
 			}
 		] );
@@ -53,12 +53,12 @@ class MessageGroupWANCacheTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testTouchCallbackConfig() {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'touchedCallback is not callable' );
 
 		$this->mgCache->configure( [
 			'key' => 'mg-wan-test',
-			'regenerator' => function () {
+			'regenerator' => static function () {
 				return 'hello';
 			},
 			'touchedCallback' => 'blah'

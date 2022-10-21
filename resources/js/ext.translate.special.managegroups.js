@@ -1,16 +1,17 @@
 ( function () {
-	var RenameDropdown;
+	var RenameDropdown,
+		GroupSynchronization;
 
 	$( function () {
-		var windowManager, renameDialog;
-
 		RenameDropdown.init();
+		GroupSynchronization.init();
+
 		// Create and append a window manager.
-		windowManager = new OO.ui.WindowManager();
+		var windowManager = new OO.ui.WindowManager();
 		windowManager.$element.appendTo( document.body );
 
 		// Create a new process dialog window.
-		renameDialog = new mw.translate.MessageRenameDialog( {
+		var renameDialog = new mw.translate.MessageRenameDialog( {
 			classes: [ 'smg-rename-dialog' ],
 			size: 'large'
 		}, function ( renameParams ) {
@@ -35,9 +36,8 @@
 		 * Attach the click handler to display the rename dropdown.
 		 */
 		$( '#mw-content-text' ).on( 'click', '.smg-rename-actions', function ( event ) {
-			var $target, $parentContainer;
-			$target = $( event.target );
-			$parentContainer = $target.parents( '.mw-translate-smg-change' );
+			var $target = $( event.target );
+			var $parentContainer = $target.parents( '.mw-translate-smg-change' );
 			RenameDropdown.appendTo( event.target, $parentContainer, {
 				groupId: $target.data( 'groupId' ),
 				msgKey: $target.data( 'msgkey' ),
@@ -139,8 +139,8 @@
 	 * @return {jQuery.Promise}
 	 */
 	function getRenames( groupId, msgKey ) {
-		var params, api = new mw.Api(), changesetName;
-		params = {
+		var api = new mw.Api();
+		var params = {
 			action: 'query',
 			meta: 'managemessagegroups',
 			formatversion: 2,
@@ -148,7 +148,7 @@
 			mmgmessageKey: msgKey
 		};
 
-		changesetName = getChangesetName();
+		var changesetName = getChangesetName();
 		if ( changesetName !== null ) {
 			params.mmgchangesetName = changesetName;
 		}
@@ -164,10 +164,9 @@
 	 * @return {string}
 	 */
 	function getChangesetName() {
-		var locationPaths, suffix, pageTitle;
-		locationPaths = window.location.pathname.split( '/' );
-		suffix = locationPaths.pop();
-		pageTitle = $( '#smgPageTitle' ).val();
+		var locationPaths = window.location.pathname.split( '/' );
+		var suffix = locationPaths.pop();
+		var pageTitle = $( '#smgPageTitle' ).val();
 
 		if ( suffix && suffix.indexOf( pageTitle ) === -1 ) {
 			return suffix;
@@ -196,9 +195,9 @@
 	 * @return {jQuery.Promise}
 	 */
 	function setRename( renameParams ) {
-		var params, api = new mw.Api(), changesetName;
+		var api = new mw.Api();
 
-		params = {
+		var params = {
 			action: 'managemessagegroups',
 			groupId: renameParams.groupId,
 			renameMessageKey: renameParams.selectedKey,
@@ -209,7 +208,7 @@
 			formatversion: 2
 		};
 
-		changesetName = getChangesetName();
+		var changesetName = getChangesetName();
 		if ( changesetName !== null ) {
 			params.changesetName = changesetName;
 		}
@@ -224,9 +223,9 @@
 	 * @return {jQuery.Promise}
 	 */
 	function setAsNew( groupId, msgKey ) {
-		var params, api = new mw.Api(), changesetName;
+		var api = new mw.Api();
 
-		params = {
+		var params = {
 			action: 'managemessagegroups',
 			groupId: groupId,
 			messageKey: msgKey,
@@ -236,7 +235,7 @@
 			formatversion: 2
 		};
 
-		changesetName = getChangesetName();
+		var changesetName = getChangesetName();
 		if ( changesetName !== null ) {
 			params.changesetName = changesetName;
 		}
@@ -351,6 +350,121 @@
 			hide: hide,
 			getData: getData,
 			hideOption: hideOption
+		};
+	}() );
+
+	GroupSynchronization = ( function () {
+		function init() {
+			$( '.js-group-sync-message-resolve' ).on( 'click', markMessageAsResolved );
+			$( '.js-group-sync-group-resolve' ).on( 'click', markGroupAsResolved );
+		}
+
+		function markMessageAsResolved() {
+			var $target = $( this ),
+				groupId = $target.data( 'groupId' ),
+				messageTitle = $target.data( 'msgTitle' );
+
+			showLoading( $target );
+
+			markAsResolved( 'resolveMessage', groupId, messageTitle ).done( function ( response ) {
+				var responseData = response.managegroupsynchronizationcache || null;
+				if ( responseData && responseData.success ) {
+					if ( responseData.data.groupRemainingMessageCount === 0 ) {
+						removeParentGroupBlock( $target );
+					} else {
+						// Remove the message from the DOM
+						$target.parents( '.js-group-sync-message-error' ).remove();
+					}
+				}
+			} ).fail( function ( code, result ) {
+				handleResolutionFailure( code, result, groupId, messageTitle );
+			} ).always( function () {
+				hideLoading( $target );
+			} );
+		}
+
+		function markGroupAsResolved() {
+			var $target = $( this ),
+				groupId = $target.data( 'groupId' );
+
+			showLoading( $target );
+
+			markAsResolved( 'resolveGroup', groupId ).done( function ( response ) {
+				var responseData = response.managegroupsynchronizationcache || null;
+				if ( responseData && responseData.success ) {
+					removeParentGroupBlock( $target );
+				}
+			} ).fail( function ( code, result ) {
+				handleResolutionFailure( code, result, groupId );
+			} ).always( function () {
+				hideLoading( $target );
+			} );
+		}
+
+		function markAsResolved( operation, groupId, messageTitle ) {
+			var api = new mw.Api();
+
+			var params = {
+				action: 'managegroupsynchronizationcache',
+				group: groupId,
+				operation: operation,
+				assert: 'user',
+				formatversion: 2
+			};
+
+			if ( messageTitle ) {
+				params.title = messageTitle;
+			}
+
+			return api.postWithToken( 'csrf', params );
+		}
+
+		function removeParentGroupBlock( $child ) {
+			// Remove the entire group block from DOM
+			$child.parents( '.js-group-sync-group-errors' ).remove();
+			// If all groups are resolved, remove the group sync error block
+			if ( !$( '.js-group-sync-group-errors' ).length ) {
+				$( '.js-group-sync-groups-with-error' ).remove();
+			}
+		}
+
+		function handleResolutionFailure( code, result, groupId, messageTitle ) {
+			var errorInfo = result && result.error ? result.error.info : null;
+			if ( errorInfo ) {
+				mw.notify( result.error.info, {
+					type: 'error',
+					tag: 'new-error'
+				} );
+			} else {
+				// Unknown error
+				mw.notify( mw.msg( 'translate-smg-unknown-error' ), {
+					type: 'error',
+					tag: 'new-error'
+				} );
+			}
+
+			mw.log.error( 'Error while resolving group or message. Param: ' + JSON.stringify( {
+				groupId: groupId,
+				messageTitle: messageTitle,
+				errorCode: code,
+				errorInfo: errorInfo
+			} ) );
+		}
+
+		function showLoading( $target ) {
+			$target.addClass( 'loading' )
+				.text( mw.msg( 'translate-smg-loading' ) )
+				.removeAttr( 'href' );
+		}
+
+		function hideLoading( $target ) {
+			$target.removeClass( 'loading' )
+				.text( mw.msg( 'translate-smg-group-action-resolve' ) )
+				.prop( 'href', '#' );
+		}
+
+		return {
+			init: init
 		};
 	}() );
 }() );

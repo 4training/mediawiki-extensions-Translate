@@ -22,42 +22,17 @@ class TranslateSandboxEmailJob extends Job {
 
 	public function run() {
 		$services = MediaWikiServices::getInstance();
-		if ( is_callable( [ $services, 'getEmailer' ] ) ) {
-			$status = $services
-				->getEmailer()
-				->send(
-					[ $this->params['to'] ],
-					$this->params['from'],
-					$this->params['subj'],
-					$this->params['body'],
-					null,
-					[ 'replyTo' => $this->params['replyto'] ]
-				);
-		} else {
-			$status = UserMailer::send(
-				$this->params['to'],
+		$status = $services
+			->getEmailer()
+			->send(
+				[ $this->params['to'] ],
 				$this->params['from'],
 				$this->params['subj'],
 				$this->params['body'],
+				null,
 				[ 'replyTo' => $this->params['replyto'] ]
 			);
-		}
 
-		$isOK = $status->isOK();
-
-		if ( $isOK && $this->params['emailType'] === 'reminder' ) {
-			$user = User::newFromId( $this->params['user'] );
-
-			$reminders = $user->getOption( 'translate-sandbox-reminders' );
-			$reminders = $reminders ? explode( '|', $reminders ) : [];
-			$reminders[] = wfTimestamp();
-			$user->setOption( 'translate-sandbox-reminders', implode( '|', $reminders ) );
-
-			$reminders = $user->getOption( 'translate-sandbox-reminders' );
-			$user->setOption( 'translate-sandbox-reminders', $reminders );
-			$user->saveSettings();
-		}
-
-		return $isOK;
+		return $status->isOK();
 	}
 }

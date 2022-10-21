@@ -14,15 +14,15 @@ class HookDocTest extends MediaWikiIntegrationTestCase {
 	protected $paths = [
 		'php' => [
 			'',
-			'api',
 			'ffs',
 			'messagegroups',
-			'specials',
-			'tag',
-			'translationaids',
+			'src/TranslatorInterface',
+			'src/MessageGroupProcessing',
+			'src/TranslatorInterface/Aid',
+			'src/PageTranslation',
 			'ttmserver',
 			'utils',
-			'webservices',
+			'src/WebService',
 		],
 		'js' => [
 			'resources/js',
@@ -85,8 +85,15 @@ class HookDocTest extends MediaWikiIntegrationTestCase {
 	protected static function getPHPHooksFromFile( $file ) {
 		$content = file_get_contents( $file );
 		$m = [];
+		// Match Hooks::run( ... )
 		preg_match_all( '/\bHooks::run\(\s*[\'"]([^\'"]+)/', $content, $m );
 		$hooks = [];
+		foreach ( $m[1] as $hook ) {
+			$hooks[$hook] = [];
+		}
+
+		// Match hookContainer->run( ... )
+		preg_match_all( '/->run\(\s*[\'"]([^\'"]+)/', $content, $m );
 		foreach ( $m[1] as $hook ) {
 			$hooks[$hook] = [];
 		}

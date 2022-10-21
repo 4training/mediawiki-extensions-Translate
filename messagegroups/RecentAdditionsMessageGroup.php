@@ -41,22 +41,9 @@ class RecentAdditionsMessageGroup extends RecentMessageGroup {
 			'rc_namespace' => $wgTranslateMessageNamespaces,
 			'rc_type != ' . RC_LOG,
 			'rc_id > ' . $this->getRCCutoff(),
+			'rc_actor' => FuzzyBot::getUser()->getActorId()
 		];
 
-		$conds[] = ActorMigration::newMigration()
-			->getWhere( $db, 'rc_user', FuzzyBot::getUser() )['conds'];
-
 		return $conds;
-	}
-
-	/**
-	 * Filters out messages that should not be displayed here
-	 * as they are not displayed in other places.
-	 *
-	 * @param MessageHandle $handle
-	 * @return bool
-	 */
-	protected function matchingMessage( MessageHandle $handle ) {
-		return MessageGroups::isTranslatableMessage( $handle );
 	}
 }

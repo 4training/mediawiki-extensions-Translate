@@ -17,12 +17,11 @@
 	function createTranslationPage( i, content ) {
 
 		return function () {
-			var identifier, title, summary,
-				api = new mw.Api();
+			var api = new mw.Api();
 
-			identifier = sourceUnits[ i ].identifier;
-			title = 'Translations:' + pageName + '/' + identifier + '/' + langCode;
-			summary = $( '#pm-summary' ).val();
+			var identifier = sourceUnits[ i ].identifier;
+			var title = 'Translations:' + pageName + '/' + identifier + '/' + langCode;
+			var summary = $( '#pm-summary' ).val();
 
 			return api.postWithToken( 'csrf', {
 				action: 'edit',
@@ -53,9 +52,9 @@
 			rvstart: fuzzyTimestamp,
 			titles: pageTitle
 		} ).then( function ( data ) {
-			var pageContent, oldTranslationUnits, obj, page,
-				$errorBox = $( '.mw-tpm-sp-error__message' );
-			for ( page in data.query.pages ) {
+			var $errorBox = $( '.mw-tpm-sp-error__message' );
+			var obj;
+			for ( var page in data.query.pages ) {
 				obj = data.query.pages[ page ];
 			}
 			if ( obj === undefined ) {
@@ -68,9 +67,8 @@
 				$errorBox.text( mw.msg( 'pm-old-translations-missing', pageTitle ) ).removeClass( 'hide' );
 				return $.Deferred().reject();
 			}
-			pageContent = obj.revisions[ 0 ][ '*' ];
-			oldTranslationUnits = pageContent.split( '\n\n' );
-			return oldTranslationUnits;
+			var pageContent = obj.revisions[ 0 ][ '*' ];
+			return pageContent.split( '\n\n' );
 		} );
 	}
 
@@ -94,10 +92,9 @@
 			rvdir: 'newer',
 			titles: pageTitle
 		} ).then( function ( data ) {
-			var timestampFB, dateFB, timestampOld,
-				page, obj,
-				$errorBox = $( '.mw-tpm-sp-error__message' );
-			for ( page in data.query.pages ) {
+			var $errorBox = $( '.mw-tpm-sp-error__message' );
+			var obj;
+			for ( var page in data.query.pages ) {
 				obj = data.query.pages[ page ];
 			}
 			// Page does not exist if missing field is present
@@ -105,16 +102,17 @@
 				$errorBox.text( mw.msg( 'pm-page-does-not-exist', pageTitle ) ).removeClass( 'hide' );
 				return $.Deferred().reject();
 			}
+
 			// Page exists, but no edit by FuzzyBot
 			if ( obj.revisions === undefined ) {
 				$errorBox.text( mw.msg( 'pm-old-translations-missing', pageTitle ) ).removeClass( 'hide' );
 				return $.Deferred().reject();
 			} else {
 				// FB over here refers to FuzzyBot
-				timestampFB = obj.revisions[ 0 ].timestamp;
-				dateFB = new Date( timestampFB );
+				var timestampFB = obj.revisions[ 0 ].timestamp;
+				var dateFB = new Date( timestampFB );
 				dateFB.setSeconds( dateFB.getSeconds() - 1 );
-				timestampOld = dateFB.toISOString();
+				var timestampOld = dateFB.toISOString();
 				mw.log( 'New Timestamp: ' + timestampOld );
 				return timestampOld;
 			}
@@ -124,32 +122,46 @@
 	/**
 	 * Get the translation units created by Translate extension.
 	 *
-	 * @param {string} pageName
+	 * @param {string} page Page name
 	 * @return {jQuery.Promise}
 	 * @return {Function} return.done
 	 * @return {Object[]} return.done.data Array of sUnit Objects
 	 */
-	function getSourceUnits( pageName ) {
+	function getSourceUnits( page ) {
 		var api = new mw.Api();
 
 		return api.get( {
 			action: 'query',
 			list: 'messagecollection',
-			mcgroup: 'page-' + pageName,
+			mcgroup: 'page-' + page,
 			mclanguage: 'en',
 			mcprop: 'definition'
 		} ).then( function ( data ) {
-			var result, i, sUnit, key;
 			sourceUnits = [];
-			result = data.query.messagecollection;
-			for ( i = 0; i < result.length; i++ ) {
-				sUnit = {};
-				key = result[ i ].key;
+			var result = data.query.messagecollection;
+			for ( var i = 0; i < result.length; i++ ) {
+				var sUnit = {};
+				var key = result[ i ].key;
 				sUnit.identifier = key.slice( key.lastIndexOf( '/' ) + 1 );
 				sUnit.definition = result[ i ].definition;
 				sourceUnits.push( sUnit );
 			}
 			return sourceUnits;
+		} ).fail( function ( code, result ) {
+			// Incase the group does not exist, just return an empty array.
+			var $errorContainer = $( '.mw-tpm-sp-error__message' );
+			var errorMessage = mw.msg( 'pm-translation-unit-fetch-failed' );
+			if (
+				code === 'badparameter' &&
+				result.error && result.error.info.indexOf( 'mcgroup' ) !== -1
+			) {
+				errorMessage = mw.msg( 'pm-pagetitle-not-translatable', page );
+			}
+
+			$errorContainer
+				.text( errorMessage )
+				.removeClass( 'hide' );
+			$.Deferred().reject();
 		} );
 	}
 
@@ -159,12 +171,11 @@
 	 * @param {jQuery} $start The starting node
 	 */
 	function shiftRowsUp( $start ) {
-		var nextVal,
-			$current = $start,
+		var $current = $start,
 			$next = $start.next();
 
 		while ( $next.length ) {
-			nextVal = $next.find( '.mw-tpm-sp-unit__target' ).val();
+			var nextVal = $next.find( '.mw-tpm-sp-unit__target' ).val();
 			$current.find( '.mw-tpm-sp-unit__target' ).val( nextVal );
 			$current = $next;
 			$next = $current.next();
@@ -185,10 +196,8 @@
 	 * @return {string} text The text of the last row
 	 */
 	function shiftRowsDown( $nextRow, text ) {
-		var oldText;
-
 		while ( $nextRow.length ) {
-			oldText = $nextRow.find( '.mw-tpm-sp-unit__target' ).val();
+			var oldText = $nextRow.find( '.mw-tpm-sp-unit__target' ).val();
 			$nextRow.find( '.mw-tpm-sp-unit__target' ).val( text );
 			$nextRow = $nextRow.next();
 			text = oldText;
@@ -205,14 +214,12 @@
 	 */
 
 	function createNewUnit( sourceText, targetText ) {
-		var $newUnit, $sourceUnit, $targetUnit, $actionUnit;
-
-		$newUnit = $( '<div>' ).addClass( 'mw-tpm-sp-unit row' );
-		$sourceUnit = $( '<textarea>' ).addClass( 'mw-tpm-sp-unit__source five columns' )
+		var $newUnit = $( '<div>' ).addClass( 'mw-tpm-sp-unit row' );
+		var $sourceUnit = $( '<textarea>' ).addClass( 'mw-tpm-sp-unit__source five columns' )
 			.prop( 'readonly', true ).attr( 'tabindex', '-1' ).val( sourceText );
-		$targetUnit = $( '<textarea>' ).addClass( 'mw-tpm-sp-unit__target five columns' )
+		var $targetUnit = $( '<textarea>' ).addClass( 'mw-tpm-sp-unit__target five columns' )
 			.val( targetText ).prop( 'dir', $.uls.data.getDir( langCode ) );
-		$actionUnit = $( '<div>' ).addClass( 'mw-tpm-sp-unit__actions two columns' );
+		var $actionUnit = $( '<div>' ).addClass( 'mw-tpm-sp-unit__actions two columns' );
 		$actionUnit.append(
 			$( '<span>' ).addClass( 'mw-tpm-sp-action mw-tpm-sp-action--add' )
 				.attr( 'title', mw.msg( 'pm-add-icon-hover-text' ) ),
@@ -228,27 +235,24 @@
 	/**
 	 * Display the source and target units alongwith the action icons.
 	 *
-	 * @param {Array} sourceUnits
+	 * @param {Array} units
 	 * @param {Array} translations
 	 */
-	function displayUnits( sourceUnits, translations ) {
-		var i, totalUnits, $newUnit, $unitListing,
-			sourceText, targetText;
-
-		noOfSourceUnits = sourceUnits.length;
+	function displayUnits( units, translations ) {
+		noOfSourceUnits = units.length;
 		noOfTranslationUnits = translations.length;
-		totalUnits = noOfSourceUnits > noOfTranslationUnits ? noOfSourceUnits : noOfTranslationUnits;
-		$unitListing = $( '.mw-tpm-sp-unit-listing' );
+		var totalUnits = noOfSourceUnits > noOfTranslationUnits ? noOfSourceUnits : noOfTranslationUnits;
+		var $unitListing = $( '.mw-tpm-sp-unit-listing' );
 		$unitListing.html( '' );
-		for ( i = 0; i < totalUnits; i++ ) {
-			sourceText = targetText = '';
-			if ( sourceUnits[ i ] !== undefined ) {
-				sourceText = sourceUnits[ i ].definition;
+		for ( var i = 0; i < totalUnits; i++ ) {
+			var sourceText = '', targetText = '';
+			if ( units[ i ] !== undefined ) {
+				sourceText = units[ i ].definition;
 			}
 			if ( translations[ i ] !== undefined ) {
 				targetText = translations[ i ];
 			}
-			$newUnit = createNewUnit( sourceText, targetText );
+			var $newUnit = createNewUnit( sourceText, targetText );
 			$unitListing.append( $newUnit );
 		}
 	}
@@ -263,7 +267,10 @@
 		return translations.map( function ( elem ) {
 			// Check https://regex101.com/r/oT7fZ2 for details
 			return elem.match( /(^==.+$|(?:(?!^==).+\n?)+)/gm );
-		} );
+		} ).reduce( function ( acc, val ) {
+			// This should be an Array.prototype.flatMap when ES2019 is supported
+			return acc.concat( val );
+		}, [] );
 	}
 
 	/**
@@ -274,9 +281,8 @@
 	 * @return {number} Index of the next unit found, -1 if not.
 	 */
 	function getHeaderUnit( startIndex, translationUnits ) {
-		var i, regex;
-		regex = new RegExp( /^==[^=]+==$/m );
-		for ( i = startIndex; i < translationUnits.length; i++ ) {
+		var regex = new RegExp( /^==[^=]+==$/m );
+		for ( var i = startIndex; i < translationUnits.length; i++ ) {
 			if ( regex.test( translationUnits[ i ] ) ) {
 				return i;
 			}
@@ -289,26 +295,24 @@
 	 * Assumption: The source headers and translation headers appear in
 	 * the same order.
 	 *
-	 * @param {Object[]} sourceUnits
+	 * @param {Object[]} units
 	 * @param {string[]} translationUnits
 	 * @return {string[]}
 	 */
-	function alignHeaders( sourceUnits, translationUnits ) {
-		var i, regex, tIndex = 0,
-			matchText, emptyCount, mergeText;
-
-		regex = new RegExp( /^==[^=]+==$/m );
-		for ( i = 0; i < sourceUnits.length; i++ ) {
-			if ( regex.test( sourceUnits[ i ].definition ) ) {
+	function alignHeaders( units, translationUnits ) {
+		var tIndex = 0;
+		var regex = new RegExp( /^==[^=]+==$/m );
+		for ( var i = 0; i < units.length; i++ ) {
+			if ( regex.test( units[ i ].definition ) ) {
 				tIndex = getHeaderUnit( tIndex, translationUnits );
-				mergeText = '';
+				var mergeText = '';
 				// search is over
 				if ( tIndex === -1 ) {
 					break;
 				}
 				// remove the unit
-				matchText = translationUnits.splice( tIndex, 1 ).toString();
-				emptyCount = i - tIndex;
+				var matchText = translationUnits.splice( tIndex, 1 ).toString();
+				var emptyCount = i - tIndex;
 				if ( emptyCount > 0 ) {
 					// add empty units
 					while ( emptyCount !== 0 ) {
@@ -340,7 +344,7 @@
 	 * Handler for 'Save' button click event.
 	 */
 	function saveHandler() {
-		var i, content, list = [];
+		var list = [];
 
 		$( '.mw-tpm-sp-error__message' ).addClass( 'hide' );
 		if ( noOfSourceUnits < noOfTranslationUnits ) {
@@ -350,8 +354,8 @@
 		} else {
 			$( 'input' ).prop( 'disabled', true );
 			$( '.mw-tpm-sp-instructions' ).addClass( 'hide' );
-			for ( i = 0; i < noOfSourceUnits; i++ ) {
-				content = $( '.mw-tpm-sp-unit__target' ).eq( i ).val();
+			for ( var i = 0; i < noOfSourceUnits; i++ ) {
+				var content = $( '.mw-tpm-sp-unit__target' ).eq( i ).val();
 				content = content.trim();
 				if ( content !== '' ) {
 					list.push( createTranslationPage( i, content ) );
@@ -390,16 +394,14 @@
 	 * @param {jQuery.Event} event
 	 */
 	function addHandler( event ) {
-		var $nextRow, text, $newUnit, $targetUnit;
-
-		$nextRow = $( event.target ).closest( '.mw-tpm-sp-unit' ).next();
-		$targetUnit = $nextRow.find( '.mw-tpm-sp-unit__target' );
-		text = $targetUnit.val();
+		var $nextRow = $( event.target ).closest( '.mw-tpm-sp-unit' ).next();
+		var $targetUnit = $nextRow.find( '.mw-tpm-sp-unit__target' );
+		var text = $targetUnit.val();
 		$targetUnit.val( '' );
 		$nextRow = $nextRow.next();
 		text = shiftRowsDown( $nextRow, text );
 		if ( text ) {
-			$newUnit = createNewUnit( '', text );
+			var $newUnit = createNewUnit( '', text );
 			$( '.mw-tpm-sp-unit-listing' ).append( $newUnit );
 		}
 		noOfTranslationUnits += 1;
@@ -412,9 +414,8 @@
 	 * @param {jQuery.Event} event
 	 */
 	function deleteHandler( event ) {
-		var sourceText, $rowUnit;
-		$rowUnit = $( event.target ).closest( '.mw-tpm-sp-unit' );
-		sourceText = $rowUnit.find( '.mw-tpm-sp-unit__source' ).val();
+		var $rowUnit = $( event.target ).closest( '.mw-tpm-sp-unit' );
+		var sourceText = $rowUnit.find( '.mw-tpm-sp-unit__source' ).val();
 		if ( !sourceText ) {
 			$rowUnit.remove();
 		} else {
@@ -431,10 +432,9 @@
 	 * @param {jQuery.Event} event
 	 */
 	function swapHandler( event ) {
-		var $rowUnit, tempText, nextVal;
-		$rowUnit = $( event.target ).closest( '.mw-tpm-sp-unit' );
-		tempText = $rowUnit.find( '.mw-tpm-sp-unit__target' ).val();
-		nextVal = $rowUnit.next().find( '.mw-tpm-sp-unit__target' ).val();
+		var $rowUnit = $( event.target ).closest( '.mw-tpm-sp-unit' );
+		var tempText = $rowUnit.find( '.mw-tpm-sp-unit__target' ).val();
+		var nextVal = $rowUnit.next().find( '.mw-tpm-sp-unit__target' ).val();
 		$rowUnit.find( '.mw-tpm-sp-unit__target' ).val( nextVal );
 		$rowUnit.next().find( '.mw-tpm-sp-unit__target' ).val( tempText );
 	}
@@ -446,19 +446,18 @@
 	 * @param {jQuery.Event} e
 	 */
 	function importHandler( e ) {
-		var pageTitle, slashPos, titleObj,
-			$errorBox = $( '.mw-tpm-sp-error__message' ),
+		var $errorBox = $( '.mw-tpm-sp-error__message' ),
 			$messageBox = $( '.mw-tpm-sp-instructions' );
 
 		e.preventDefault();
 
-		pageTitle = $( '#title' ).val().trim();
+		var pageTitle = $( '#title' ).val().trim();
 		if ( pageTitle === '' ) {
 			$errorBox.text( mw.msg( 'pm-pagetitle-missing' ) ).removeClass( 'hide' );
 			return;
 		}
 
-		titleObj = mw.Title.newFromText( pageTitle );
+		var titleObj = mw.Title.newFromText( pageTitle );
 		$messageBox.addClass( 'hide' );
 		if ( titleObj === null ) {
 			$errorBox.text( mw.msg( 'pm-pagetitle-invalid' ) ).removeClass( 'hide' );
@@ -466,15 +465,15 @@
 		}
 
 		pageTitle = titleObj.getPrefixedDb();
-		slashPos = pageTitle.lastIndexOf( '/' );
+		var slashPos = pageTitle.lastIndexOf( '/' );
 
 		if ( slashPos === -1 ) {
 			$errorBox.text( mw.msg( 'pm-langcode-missing' ) ).removeClass( 'hide' );
 			return;
 		}
 
-		pageName = pageTitle.substring( 0, slashPos );
-		langCode = pageTitle.substring( slashPos + 1 );
+		pageName = pageTitle.slice( 0, slashPos );
+		langCode = pageTitle.slice( slashPos + 1 );
 
 		if ( pageName === '' ) {
 			$errorBox.text( mw.msg( 'pm-pagetitle-invalid' ) ).removeClass( 'hide' );
@@ -483,18 +482,26 @@
 
 		$errorBox.addClass( 'hide' );
 
-		$.when( getSourceUnits( pageName ), getFuzzyTimestamp( pageTitle ) )
-			.then( function ( sourceUnits, fuzzyTimestamp ) {
-				noOfSourceUnits = sourceUnits.length;
-				splitTranslationPage( fuzzyTimestamp, pageTitle ).done( function ( translations ) {
-					var translationUnits = splitHeaders( translations );
-					translationUnits = alignHeaders( sourceUnits, translationUnits );
-					noOfTranslationUnits = translationUnits.length;
-					displayUnits( sourceUnits, translationUnits );
-					$( '#action-save, #action-cancel' ).removeClass( 'hide' );
-					$( '#action-import' ).addClass( 'hide' );
-					$messageBox.text( mw.msg( 'pm-on-import-message-text' ) ).removeClass( 'hide' );
-				} );
+		var fuzzyTimestamp = null;
+		var units = null;
+		getFuzzyTimestamp( pageTitle )
+			.then( function ( response ) {
+				fuzzyTimestamp = response;
+				return getSourceUnits( pageName );
+			} )
+			.then( function ( response ) {
+				units = response;
+				return splitTranslationPage( fuzzyTimestamp, pageTitle );
+			} )
+			.then( function ( translations ) {
+				noOfSourceUnits = units.length;
+				var translationUnits = splitHeaders( translations );
+				translationUnits = alignHeaders( units, translationUnits );
+				noOfTranslationUnits = translationUnits.length;
+				displayUnits( units, translationUnits );
+				$( '#action-save, #action-cancel' ).removeClass( 'hide' );
+				$( '#action-import' ).addClass( 'hide' );
+				$messageBox.text( mw.msg( 'pm-on-import-message-text' ) ).removeClass( 'hide' );
 			} );
 	}
 
@@ -520,6 +527,7 @@
 		getSourceUnits: getSourceUnits,
 		getFuzzyTimestamp: getFuzzyTimestamp,
 		splitTranslationPage: splitTranslationPage,
+		splitHeaders: splitHeaders,
 		alignHeaders: alignHeaders
 	} );
 

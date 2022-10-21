@@ -33,7 +33,7 @@ class DtdFFS extends SimpleFFS {
 		$messages = array_combine(
 			$keys,
 			array_map(
-				function ( $message ) {
+				static function ( $message ) {
 					return html_entity_decode( $message, ENT_QUOTES );
 				},
 				$messages
@@ -88,6 +88,7 @@ class DtdFFS extends SimpleFFS {
 		$native = TranslateUtils::getLanguageName( $code, $code );
 
 		$output = "# Messages for $name ($native)\n";
+		// @phan-suppress-next-line PhanPossiblyUndeclaredVariable
 		$output .= "# Exported from $wgSitename\n\n";
 
 		return $output;

@@ -8,6 +8,7 @@ use Html;
 use Language;
 use MediaWiki\Config\ServiceOptions;
 use MediaWiki\Languages\LanguageNameUtils;
+use MediaWiki\User\UserOptionsLookup;
 use SpecialPage;
 use Title;
 use TranslateSandbox;
@@ -27,6 +28,8 @@ class TranslationStashSpecialPage extends SpecialPage {
 	private $options;
 	/** @var LanguageNameUtils */
 	private $languageNameUtils;
+	/** @var UserOptionsLookup */
+	private $userOptionsLookup;
 
 	public const CONSTRUCTOR_OPTIONS = [
 		'TranslateSandboxLimit',
@@ -36,10 +39,12 @@ class TranslationStashSpecialPage extends SpecialPage {
 	public function __construct(
 		LanguageNameUtils $languageNameUtils,
 		TranslationStashReader $stash,
+		UserOptionsLookup $userOptionsLookup,
 		ServiceOptions $options
 	) {
 		$this->languageNameUtils = $languageNameUtils;
 		$this->stash = $stash;
+		$this->userOptionsLookup = $userOptionsLookup;
 		$this->options = $options;
 		parent::__construct( 'TranslationStash' );
 	}
@@ -59,7 +64,7 @@ class TranslationStashSpecialPage extends SpecialPage {
 		$this->setHeaders();
 		$out = $this->getOutput();
 
-		$this->stash = new TranslationStashStorage( wfGetDB( DB_MASTER ) );
+		$this->stash = new TranslationStashStorage( wfGetDB( DB_PRIMARY ) );
 
 		if ( !$this->hasPermissionToUse() ) {
 			if ( $secondaryPermissionUrl && $this->getUser()->isRegistered() ) {
@@ -76,7 +81,7 @@ class TranslationStashSpecialPage extends SpecialPage {
 		}
 
 		$out->addJsConfigVars( 'wgTranslateSandboxLimit', $limit );
-		$out->addModules( 'ext.translate.special.translationstash' );
+		$out->addModules( 'ext.translate.specialTranslationStash' );
 		$out->addModuleStyles( 'mediawiki.ui.button' );
 		$this->showPage();
 	}
@@ -115,7 +120,7 @@ class TranslationStashSpecialPage extends SpecialPage {
 		<div class="six columns stash-stats">
 			{$progress}
 		</div>
-		<div class="six columns ext-translate-language-selector right">
+		<div class="six columns ext-translate-language-selector">
 			{$this->tuxLanguageSelector()}
 		</div>
 	</div>
@@ -148,25 +153,43 @@ HTML
 		$language = $this->getTargetLanguage();
 		$targetLangName = $this->languageNameUtils->getLanguageName( $language->getCode() );
 
-		$label = Html::element(
+		$label = Html::element( 'span', [], $this->msg( 'tux-languageselector' )->text() );
+
+		$languageIcon = Html::element(
 			'span',
-			[ 'class' => 'ext-translate-language-selector-label' ],
-			$this->msg( 'tux-languageselector' )->text()
+			[ 'class' => 'ext-translate-language-icon' ]
 		);
 
-		$trigger = Html::element(
+		$targetLanguageName = Html::element(
 			'span',
 			[
-				'class' => 'uls',
-				'lang' => $language->getHtmlCode(),
+				'class' => 'ext-translate-target-language',
 				'dir' => $language->getDir(),
+				'lang' => $language->getHtmlCode()
 			],
 			$targetLangName
 		);
 
-		// No-break space is added for spacing after the label
-		// and to ensure separation of words (in Arabic, for example)
-		return "$label&#160;$trigger";
+		$expandIcon = Html::element(
+			'span',
+			[ 'class' => 'ext-translate-language-selector-expand' ]
+		);
+
+		$value = Html::rawElement(
+			'span',
+			[
+				'class' => 'uls mw-ui-button',
+				'tabindex' => 0,
+				'title' => $this->msg( 'tux-select-target-language' )->text()
+			],
+			$languageIcon . $targetLanguageName . $expandIcon
+		);
+
+		return Html::rawElement(
+			'div',
+			[ 'class' => 'columns ext-translate-language-selector' ],
+			"$label $value"
+		);
 	}
 
 	/** Returns the source language for messages. */
@@ -183,7 +206,10 @@ HTML
 			return $ui;
 		}
 
-		$options = FormatJson::decode( $this->getUser()->getOption( 'translate-sandbox' ), true );
+		$options = FormatJson::decode(
+			$this->userOptionsLookup->getOption( $this->getUser(), 'translate-sandbox' ),
+			true
+		);
 		$supported = TranslateUtils::getLanguageNames( 'en' );
 
 		if ( isset( $options['languages'] ) ) {
@@ -202,5 +228,3 @@ HTML
 		return Language::factory( $source->getCode() );
 	}
 }
-
-class_alias( TranslationStashSpecialPage::class, '\MediaWiki\Extensions\Translate\TranslationStashSpecialPage' );

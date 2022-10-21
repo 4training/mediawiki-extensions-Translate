@@ -1,33 +1,41 @@
 <?php
-/**
- * @file
- * @author Niklas Laxström
- * @license GPL-2.0-or-later
- */
+declare( strict_types = 1 );
+
 namespace MediaWiki\Extension\Translate;
 
 use MediaWiki\Extension\Translate\Cache\PersistentCache;
+use MediaWiki\Extension\Translate\MessageBundleTranslation\MessageBundleStore;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\CsvTranslationImporter;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\MessageGroupReview;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\TranslatableBundleFactory;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\TranslatablePageStore;
+use MediaWiki\Extension\Translate\PageTranslation\TranslatableBundleMover;
 use MediaWiki\Extension\Translate\PageTranslation\TranslatablePageParser;
+use MediaWiki\Extension\Translate\PageTranslation\TranslationUnitStoreFactory;
+use MediaWiki\Extension\Translate\Statistics\ProgressStatsTableFactory;
 use MediaWiki\Extension\Translate\Statistics\TranslationStatsDataProvider;
 use MediaWiki\Extension\Translate\Statistics\TranslatorActivity;
+use MediaWiki\Extension\Translate\Synchronization\ExternalMessageSourceStateImporter;
 use MediaWiki\Extension\Translate\Synchronization\GroupSynchronizationCache;
+use MediaWiki\Extension\Translate\TranslatorInterface\EntitySearch;
 use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashReader;
 use MediaWiki\Extension\Translate\TtmServer\TtmServerFactory;
-use MediaWiki\Extension\Translate\Utilities\Json\JsonCodec;
+use MediaWiki\Extension\Translate\Utilities\ConfigHelper;
 use MediaWiki\Extension\Translate\Utilities\ParsingPlaceholderFactory;
 use MediaWiki\MediaWikiServices;
+use MessageIndex;
 use Psr\Container\ContainerInterface;
 
 /**
  * Minimal service container.
  *
- * Main purpose is to give type-hinted getters for services defined in this extensions.
+ * Main purpose is to give type-hinted getters for services defined in this extension.
  *
+ * @author Niklas Laxström
+ * @license GPL-2.0-or-later
  * @since 2020.04
  */
 class Services implements ContainerInterface {
-	/** @var self */
-	private static $instance;
 	/** @var ContainerInterface */
 	private $container;
 
@@ -36,8 +44,7 @@ class Services implements ContainerInterface {
 	}
 
 	public static function getInstance(): Services {
-		self::$instance = self::$instance ?? new self( MediaWikiServices::getInstance() );
-		return self::$instance;
+		return new self( MediaWikiServices::getInstance() );
 	}
 
 	/** @inheritDoc */
@@ -50,13 +57,41 @@ class Services implements ContainerInterface {
 		return $this->container->has( $id );
 	}
 
+	public function getConfigHelper(): ConfigHelper {
+		return $this->get( 'Translate:ConfigHelper' );
+	}
+
+	/** @since 2022.06 */
+	public function getCsvTranslationImporter(): CsvTranslationImporter {
+		return $this->get( 'Translate:CsvTranslationImporter' );
+	}
+
+	/** @since 2021.10 */
+	public function getEntitySearch(): EntitySearch {
+		return $this->get( 'Translate:EntitySearch' );
+	}
+
+	public function getExternalMessageSourceStateImporter(): ExternalMessageSourceStateImporter {
+		return $this->get( 'Translate:ExternalMessageSourceStateImporter' );
+	}
+
 	public function getGroupSynchronizationCache(): GroupSynchronizationCache {
 		return $this->get( 'Translate:GroupSynchronizationCache' );
 	}
 
-	/** @since 2020.12 */
-	public function getJsonCodec(): JsonCodec {
-		return $this->get( 'Translate:JsonCodec' );
+	/** @since 2022.06 */
+	public function getMessageBundleStore(): MessageBundleStore {
+		return $this->get( 'Translate:MessageBundleStore' );
+	}
+
+	/** @since 2020.10 */
+	public function getMessageIndex(): MessageIndex {
+		return $this->get( 'Translate:MessageIndex' );
+	}
+
+	/** @since 2022.07 */
+	public function getMessageGroupReview(): MessageGroupReview {
+		return $this->get( 'Translate:MessageGroupReview' );
 	}
 
 	/** @since 2020.07 */
@@ -69,8 +104,28 @@ class Services implements ContainerInterface {
 		return $this->get( 'Translate:PersistentCache' );
 	}
 
+	/** @since 2020.12 */
+	public function getProgressStatsTableFactory(): ProgressStatsTableFactory {
+		return $this->get( 'Translate:ProgressStatsTableFactory' );
+	}
+
+	/** @since 2022.03 */
+	public function getTranslatableBundleFactory(): TranslatableBundleFactory {
+		return $this->get( 'Translate:TranslatableBundleFactory' );
+	}
+
+	/** @since 2022.02 */
+	public function getTranslatableBundleMover(): TranslatableBundleMover {
+		return $this->get( 'Translate:TranslatableBundleMover' );
+	}
+
 	public function getTranslatablePageParser(): TranslatablePageParser {
 		return $this->get( 'Translate:TranslatablePageParser' );
+	}
+
+	/** @since 2022.03 */
+	public function getTranslatablePageStore(): TranslatablePageStore {
+		return $this->get( 'Translate:TranslatablePageStore' );
 	}
 
 	/** @since 2020.11 */
@@ -83,6 +138,11 @@ class Services implements ContainerInterface {
 		return $this->get( 'Translate:TranslationStatsDataProvider' );
 	}
 
+	/** @since 2021.05 */
+	public function getTranslationUnitStoreFactory(): TranslationUnitStoreFactory {
+		return $this->get( 'Translate:TranslationUnitStoreFactory' );
+	}
+
 	public function getTranslatorActivity(): TranslatorActivity {
 		return $this->get( 'Translate:TranslatorActivity' );
 	}
@@ -92,5 +152,3 @@ class Services implements ContainerInterface {
 		return $this->get( 'Translate:TtmServerFactory' );
 	}
 }
-
-class_alias( Services::class, '\MediaWiki\Extensions\Translate\Services' );

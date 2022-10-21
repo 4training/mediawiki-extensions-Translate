@@ -1,7 +1,8 @@
 {
 	"@metadata": {
 		"authors": [
-			"Giromin Cangiaxo"
+			"Giromin Cangiaxo",
+			"N. Longo"
 		]
 	},
 	"translate": "Tradue",
@@ -45,7 +46,6 @@
 	"translate-edit-warnings": "Avvixi in scê tradussioin incomplete",
 	"translate-edit-tmmatch-source": "Testo d'origgine pe-a tradussion: $1",
 	"translate-edit-tmmatch": "$1&nbsp;% de corispondensa",
-	"translate-use-suggestion": "Sostituisci a tradussion corente con sto suggerimento.",
 	"translate-edit-nopermission": "Pe tradue di messaggi te ghe voeu i driti de tradussion.",
 	"translate-edit-askpermission": "Otegni aotorizzassion",
 	"exporttranslations": "Esporta tradussioin",
@@ -60,5 +60,5 @@
 	"translate-checks-links-missing": "Gh'amanca {{PLURAL:$2|o seguente ingancio|i $2 seguenti inganci}}:\n<strong><nowiki>$1</nowiki></strong>",
 	"translate-checks-plural": "La definission a l'adoeuvia <nowiki>{{PLURAL:}}</nowiki> ma a tradussion no.",
 	"languagestats": "Statisteghe da lengoa",
-	"translate-documentation-language": "Documentassion do messaggio"
+	"translate-documentation-language": "Docomentaçión do mesàggio"
 }

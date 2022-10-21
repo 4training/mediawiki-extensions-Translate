@@ -37,7 +37,7 @@ class FlatPhpFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 		foreach ( $matches as $_ ) {
 			$legal = Title::legalChars();
 			$key = preg_replace_callback( "/([^$legal]|\\\\)/u",
-				function ( $m ) {
+				static function ( $m ) {
 					return '\x' . dechex( ord( $m[0] ) );
 				},
 				$_[1]
@@ -55,12 +55,7 @@ class FlatPhpFFS extends SimpleFFS implements MetaYamlSchemaExtender {
 	}
 
 	protected function writeReal( MessageCollection $collection ) {
-		if ( isset( $this->extra['header'] ) ) {
-			$output = $this->extra['header'];
-		} else {
-			$output = "<?php\n";
-		}
-
+		$output = $this->extra['header'] ?? "<?php\n";
 		$output .= $this->doHeader( $collection );
 
 		$mangler = $this->group->getMangler();

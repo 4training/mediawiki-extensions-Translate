@@ -7,6 +7,7 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\PageTranslation\Hooks as PageTranslationHooks;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\SlotRecord;
@@ -125,7 +126,7 @@ class TranslateUtils {
 	 * @param bool $addFuzzy Add the fuzzy tag if appropriate.
 	 * @return string|null
 	 */
-	public static function getContentForTitle( Title $title, $addFuzzy = false ) {
+	public static function getContentForTitle( Title $title, $addFuzzy = false ): ?string {
 		$store = MediaWikiServices::getInstance()->getRevisionStore();
 		$revision = $store->getRevisionByTitle( $title );
 
@@ -133,19 +134,19 @@ class TranslateUtils {
 			return null;
 		}
 
-		$wiki = ContentHandler::getContentText( $revision->getContent( SlotRecord::MAIN ) );
+		$content = $revision->getContent( SlotRecord::MAIN );
+		$wiki = ( $content instanceof TextContent ) ? $content->getText() : null;
 
-		if ( !$wiki ) {
+		// Either unexpected content type, or the revision content is hidden
+		if ( $wiki === null ) {
 			return null;
 		}
 
-		if ( !$addFuzzy ) {
-			return $wiki;
-		}
-
-		$handle = new MessageHandle( $title );
-		if ( $handle->isFuzzy() ) {
-			$wiki = TRANSLATE_FUZZY . str_replace( TRANSLATE_FUZZY, '', $wiki );
+		if ( $addFuzzy ) {
+			$handle = new MessageHandle( $title );
+			if ( $handle->isFuzzy() ) {
+				$wiki = TRANSLATE_FUZZY . str_replace( TRANSLATE_FUZZY, '', $wiki );
+			}
 		}
 
 		return $wiki;
@@ -167,8 +168,6 @@ class TranslateUtils {
 
 		$dbr = wfGetDB( DB_REPLICA );
 
-		$actorQuery = ActorMigration::newMigration()->getJoin( 'rc_user' );
-
 		$hours = (int)$hours;
 		$cutoff_unixtime = time() - ( $hours * 3600 );
 		$cutoff = $dbr->timestamp( $cutoff_unixtime );
@@ -182,15 +181,15 @@ class TranslateUtils {
 		}
 
 		$res = $dbr->select(
-			[ 'recentchanges' ] + $actorQuery['tables'],
+			[ 'recentchanges', 'actor' ],
 			array_merge( [
 				'rc_namespace', 'rc_title', 'rc_timestamp',
-				'rc_user_text' => $actorQuery['fields']['rc_user_text'],
+				'rc_user_text' => 'actor_name',
 			], $extraFields ),
 			$conds,
 			__METHOD__,
 			[],
-			$actorQuery['joins']
+			[ 'actor' => [ 'JOIN', 'actor_id=rc_actor' ] ]
 		);
 		$rows = iterator_to_array( $res );
 
@@ -201,7 +200,7 @@ class TranslateUtils {
 		}
 		unset( $row );
 
-		usort( $rows, function ( $a, $b ) {
+		usort( $rows, static function ( $a, $b ) {
 			$x = strcmp( $a->lang, $b->lang );
 			if ( !$x ) {
 				// descending order
@@ -274,7 +273,7 @@ class TranslateUtils {
 	 * @return array ( language code => language name )
 	 */
 	public static function getLanguageNames( $code ) {
-		$languageNames = Language::fetchLanguageNames( $code );
+		$languageNames = MediaWikiServices::getInstance()->getLanguageNameUtils()->getLanguageNames( $code );
 
 		$deprecatedCodes = LanguageCode::getDeprecatedCodeMapping();
 		foreach ( array_keys( $deprecatedCodes ) as $deprecatedCode ) {
@@ -368,7 +367,6 @@ class TranslateUtils {
 	 */
 	public static function assetPath( $path ) {
 		global $wgExtensionAssetsPath;
-
 		return "$wgExtensionAssetsPath/Translate/$path";
 	}
 
@@ -437,50 +435,34 @@ class TranslateUtils {
 	}
 
 	/**
-	 * Parses list of language codes to an array.
-	 * @param string $codes Comma separated list of language codes. "*" for all.
-	 * @return string[] Language codes.
-	 */
-	public static function parseLanguageCodes( $codes ) {
-		$langs = array_map( 'trim', explode( ',', $codes ) );
-		if ( $langs[0] === '*' ) {
-			$languages = Language::fetchLanguageNames();
-			ksort( $languages );
-			$langs = array_keys( $languages );
-		}
-
-		return $langs;
-	}
-
-	/**
 	 * Get a DB handle suitable for read and read-for-write cases
 	 *
-	 * @return \Wikimedia\Rdbms\IDatabase Master for HTTP POST, CLI, DB already changed;
+	 * @return \Wikimedia\Rdbms\IDatabase Primary for HTTP POST, CLI, DB already changed;
 	 *  replica otherwise
 	 */
 	public static function getSafeReadDB() {
 		$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
-		$index = self::shouldReadFromMaster() ? DB_MASTER : DB_REPLICA;
+		$index = self::shouldReadFromPrimary() ? DB_PRIMARY : DB_REPLICA;
 
 		return $lb->getConnectionRef( $index );
 	}
 
 	/**
-	 * Check whether master should be used for reads to avoid reading stale data.
+	 * Check whether primary should be used for reads to avoid reading stale data.
 	 *
 	 * @return bool
 	 */
-	public static function shouldReadFromMaster() {
+	public static function shouldReadFromPrimary() {
 		$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
 		// Parsing APIs need POST for payloads but are read-only, so avoid spamming
-		// the master then. No good way to check this at the moment...
+		// the primary then. No good way to check this at the moment...
 		if ( PageTranslationHooks::$renderingContext ) {
 			return false;
 		}
 
 		return PHP_SAPI === 'cli' ||
 			RequestContext::getMain()->getRequest()->wasPosted() ||
-			$lb->hasOrMadeRecentMasterChanges();
+			$lb->hasOrMadeRecentPrimaryChanges();
 	}
 
 	/**
@@ -496,7 +478,7 @@ class TranslateUtils {
 
 		$title = MediaWikiServices::getInstance()
 			->getSpecialPageFactory()->getPage( 'Translate' )->getPageTitle();
-		return $title->getLocalURL( [
+		return $title->getFullURL( [
 			'showMessage' => $handle->getInternalKey(),
 			'group' => $handle->getGroup()->getId(),
 			'language' => $handle->getCode(),
@@ -548,26 +530,64 @@ class TranslateUtils {
 		return $namespaceInfo->hasSubpages( $title->getNamespace() );
 	}
 
-	public static function isEditPage( WebRequest $request ): bool {
-		$veAction = $request->getVal( 'veaction' );
-		if ( $veAction ) {
-			return true;
+	/**
+	 * Checks whether a language code is supported for translation at the wiki level.
+	 * Note that it is possible that message groups define other language codes which
+	 * are not supported by the wiki, in which case this function would return false
+	 * for those.
+	 *
+	 * @param string $code
+	 * @return bool
+	 */
+	public static function isSupportedLanguageCode( string $code ): bool {
+		$all = self::getLanguageNames( null );
+		return isset( $all[ $code ] );
+	}
+
+	public static function getTextFromTextContent( ?Content $content ): string {
+		if ( !$content ) {
+			throw new UnexpectedValueException( 'Expected $content to be TextContent, got null instead.' );
 		}
 
-		$action = $request->getVal( 'action' );
-		return $action === 'edit';
+		if ( $content instanceof TextContent ) {
+			return $content->getText();
+		}
+
+		throw new UnexpectedValueException( 'Expected $content to be TextContent, but got ' . get_class( $content ) );
 	}
 
 	/**
-	 * Add support for <= 1.34. Wrapper method to fetch the the MW version
-	 * @return string
+	 * Returns all translations of a given message.
+	 * @param MessageHandle $handle Language code is ignored.
+	 * @return array ( string => array ( string, string ) ) Tuples of page
+	 * text and last author indexed by page name.
+	 * @since 2012-12-18
 	 */
-	public static function getMWVersion(): string {
-		if ( defined( 'MW_VERSION' ) ) {
-			return MW_VERSION;
+	public static function getTranslations( MessageHandle $handle ): array {
+		$namespace = $handle->getTitle()->getNamespace();
+		$base = $handle->getKey();
+
+		$dbr = MediaWikiServices::getInstance()
+			->getDBLoadBalancer()
+			->getConnection( DB_REPLICA );
+
+		$titles = $dbr->newSelectQueryBuilder()
+			->select( 'page_title' )
+			->from( 'page' )
+			->where( [
+				'page_namespace' => $namespace,
+				'page_title ' . $dbr->buildLike( "$base/", $dbr->anyString() ),
+			] )
+			->caller( __METHOD__ )
+			->orderBy( 'page_title' )
+			->fetchFieldValues();
+
+		if ( $titles === [] ) {
+			return [];
 		}
 
-		global $wgVersion;
-		return $wgVersion;
+		$pageInfo = self::getContents( $titles, $namespace );
+
+		return $pageInfo;
 	}
 }

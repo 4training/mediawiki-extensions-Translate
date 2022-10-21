@@ -11,7 +11,7 @@ class MessageGroupStatsTest extends MediaWikiIntegrationTestCase {
 
 		$this->setTemporaryHook(
 			'TranslatePostInitGroups',
-			function ( &$list ) {
+			static function ( &$list ) {
 				$exampleMessageGroup = new WikiMessageGroup( 'theid', 'thesource' );
 				$exampleMessageGroup->setLabel( 'thelabel' ); // Example
 				$exampleMessageGroup->setNamespace( 5 ); // Example
@@ -20,7 +20,7 @@ class MessageGroupStatsTest extends MediaWikiIntegrationTestCase {
 		);
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 	}
 

@@ -8,6 +8,7 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\PageTranslation\Hooks;
 use MediaWiki\Extension\Translate\PageTranslation\TranslatablePageInsertablesSuggester;
 use MediaWiki\Extension\Translate\PageTranslation\TranslationUnit;
 use MediaWiki\Extension\Translate\Validation\ValidationRunner;
@@ -75,8 +76,7 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		$defs = [];
 
 		foreach ( $res as $r ) {
-			$section = new TranslationUnit();
-			$section->text = $r->trs_text;
+			$section = new TranslationUnit( $r->trs_text );
 			$defs[$r->trs_key] = $section->getTextWithVariables();
 		}
 
@@ -86,12 +86,15 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		return $this->definitions;
 	}
 
+	/**
+	 * @param string[] $keys
+	 * @return string[]
+	 */
 	public function makeGroupKeys( array $keys ): array {
 		$prefix = $this->getTitle()->getPrefixedDBkey() . '/';
-		foreach ( $keys as $index => $key ) {
-			$keys[$index] = $prefix . str_replace( ' ', '_', $key );
-		}
-		return $keys;
+		return array_map( static function ( string $key ) use ( $prefix ): string {
+			return $prefix . str_replace( ' ', '_', $key );
+		}, $keys );
 	}
 
 	/**
@@ -147,7 +150,7 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 		}
 
 		$title = Title::makeTitleSafe( $this->getNamespace(), "$key/$code" );
-		if ( PageTranslationHooks::$renderingContext ) {
+		if ( Hooks::$renderingContext ) {
 			$revFlags = IDBAccessObject::READ_NORMAL; // bug T95753
 		} else {
 			$revFlags = ( $flags & self::READ_LATEST ) == self::READ_LATEST
@@ -162,7 +165,8 @@ class WikiPageMessageGroup extends MessageGroupOld implements IDBAccessObject {
 			return null;
 		}
 
-		return ContentHandler::getContentText( $rev->getContent( SlotRecord::MAIN ) );
+		$content = $rev->getContent( SlotRecord::MAIN );
+		return ( $content instanceof TextContent ) ? $content->getText() : null;
 	}
 
 	/** @return ValidationRunner */

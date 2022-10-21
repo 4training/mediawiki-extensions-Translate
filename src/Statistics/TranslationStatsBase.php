@@ -30,7 +30,9 @@ abstract class TranslationStatsBase implements TranslationStatsInterface {
 	public function getDateFormat() {
 		$dateFormat = 'Y-m-d';
 		$scale = $this->opts->getValue( 'scale' );
-		if ( $scale === 'months' ) {
+		if ( $scale === 'years' ) {
+			$dateFormat = 'Y';
+		} elseif ( $scale === 'months' ) {
 			$dateFormat = 'Y-m';
 		} elseif ( $scale === 'weeks' ) {
 			$dateFormat = 'Y-\WW';
@@ -46,10 +48,10 @@ abstract class TranslationStatsBase implements TranslationStatsInterface {
 
 		$conds = [];
 		if ( $start !== null ) {
-			$conds[] = "$field >= '{$db->timestamp( $start )}'";
+			$conds[] = "$field >= " . $db->addQuotes( $db->timestamp( $start ) );
 		}
 		if ( $end !== null ) {
-			$conds[] = "$field <= '{$db->timestamp( $end )}'";
+			$conds[] = "$field <= " . $db->addQuotes( $db->timestamp( $end ) );
 		}
 
 		return $conds;
@@ -73,5 +75,3 @@ abstract class TranslationStatsBase implements TranslationStatsInterface {
 		return array_keys( $namespaces );
 	}
 }
-
-class_alias( TranslationStatsBase::class, '\MediaWiki\Extensions\Translate\TranslationStatsBase' );

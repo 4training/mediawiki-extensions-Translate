@@ -23,7 +23,7 @@ class TranslateHooksTest extends MediaWikiLangTestCase {
 		$this->setTemporaryHook( 'TranslatePostInitGroups', [ $this, 'getTestGroups' ] );
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 
 		MessageIndex::setInstance( new HashMessageIndex() );
@@ -44,10 +44,10 @@ class TranslateHooksTest extends MediaWikiLangTestCase {
 	public function testPreventCategorization() {
 		$user = $this->getTestSysop()->getUser();
 		$title = Title::makeTitle( NS_MEDIAWIKI, 'Ugakey1/fi' );
-		$wikipage = WikiPage::factory( $title );
+		$wikipage = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( '[[Category:Shouldnotbe]]', $title );
 
-		$wikipage->doEditContent( $content, __METHOD__, 0, false, $user );
+		$wikipage->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertEquals(
 			[],
 			$title->getParentCategories(),
@@ -55,10 +55,10 @@ class TranslateHooksTest extends MediaWikiLangTestCase {
 		);
 
 		$title = Title::makeTitle( NS_MEDIAWIKI, 'Ugakey2/qqq' );
-		$wikipage = WikiPage::factory( $title );
+		$wikipage = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( '[[Category:Shouldbe]]', $title );
 
-		$wikipage->doEditContent( $content, __METHOD__, 0, false, $user );
+		$wikipage->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertEquals(
 			[ 'Category:Shouldbe' => 'MediaWiki:Ugakey2/qqq' ],
 			$title->getParentCategories(),
@@ -66,10 +66,10 @@ class TranslateHooksTest extends MediaWikiLangTestCase {
 		);
 
 		$title = Title::makeTitle( NS_MEDIAWIKI, 'Ugakey3/no' );
-		$wikipage = WikiPage::factory( $title );
+		$wikipage = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( '[[Category:Shouldbealso]]', $title );
 
-		$wikipage->doEditContent( $content, __METHOD__, 0, false, $user );
+		$wikipage->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertEquals( [], $title->getParentCategories(), 'unknown message' );
 	}
 

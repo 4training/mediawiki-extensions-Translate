@@ -42,7 +42,7 @@ class MockWikiValidationMessageGroup extends MockWikiMessageGroup {
 			[
 				'class' => MockTranslateValidator::class,
 				'enforce' => true,
-				'keymatch' => [
+				'include' => [
 					'translated',
 					'untranslated',
 					[
@@ -53,7 +53,19 @@ class MockWikiValidationMessageGroup extends MockWikiMessageGroup {
 						'type' => 'wildcard',
 						'pattern' => '*translated*'
 					]
+				],
+				'exclude' => [
+					'key-excluded',
+					[
+						'type' => 'regex',
+						'pattern' => '/regex-exclude/'
+					],
+					[
+						'type' => 'wildcard',
+						'pattern' => '*wildcard-exclude*'
+					]
 				]
+
 			],
 		] );
 

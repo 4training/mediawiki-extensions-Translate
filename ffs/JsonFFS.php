@@ -7,6 +7,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\ArrayFlattener;
+
 /**
  * JsonFFS implements a message format where messages are encoded
  * as key-value pairs in JSON objects. The format is extended to
@@ -66,7 +68,7 @@ class JsonFFS extends SimpleFFS {
 		return [
 			'MESSAGES' => $messages,
 			'AUTHORS' => $authors,
-			'METADATA' => $metadata,
+			'EXTRA' => [ 'METADATA' => $metadata ],
 		];
 	}
 
@@ -75,16 +77,9 @@ class JsonFFS extends SimpleFFS {
 	 * @return string
 	 */
 	protected function writeReal( MessageCollection $collection ) {
+		$template = $this->read( $collection->getLanguage() ) ?: [];
+		$authors = $this->filterAuthors( $collection->getAuthors(), $collection->getLanguage() );
 		$messages = [];
-		$template = $this->read( $collection->getLanguage() );
-
-		$messages['@metadata'] = $template['METADATA'] ?? [];
-
-		$authors = $collection->getAuthors();
-		$authors = $this->filterAuthors( $authors, $collection->getLanguage() );
-		$messages['@metadata']['authors'] = array_values( $authors );
-
-		$mangler = $this->group->getMangler();
 
 		/** @var TMessage $m */
 		foreach ( $collection as $key => $m ) {
@@ -97,21 +92,36 @@ class JsonFFS extends SimpleFFS {
 				$value = str_replace( TRANSLATE_FUZZY, '', $value );
 			}
 
-			$key = $mangler->unmangle( $key );
 			$messages[$key] = $value;
 		}
 
-		// Do not create empty files. Check that something besides @metadata is present.
-		if ( count( $messages ) < 2 ) {
+		// Do not create files without translations
+		if ( $messages === [] ) {
 			return '';
 		}
+
+		$template['MESSAGES'] = $messages;
+		$template['AUTHORS'] = $authors;
+
+		return $this->generateFile( $template );
+	}
+
+	public function generateFile( array $template ): string {
+		$messages = $template['MESSAGES'];
+		$authors = $template['AUTHORS'];
 
 		if ( $this->flattener ) {
 			$messages = $this->flattener->unflatten( $messages );
 		}
 
-		if ( isset( $this->extra['includeMetadata'] ) && !$this->extra['includeMetadata'] ) {
-			unset( $messages['@metadata'] );
+		$mangler = $this->group->getMangler();
+		$messages = $mangler->unmangleArray( $messages );
+
+		if ( $this->extra['includeMetadata'] ?? true ) {
+			$metadata = $template['EXTRA']['METADATA'] ?? [];
+			$metadata['authors'] = $authors;
+
+			$messages = [ '@metadata' => $metadata ] + $messages;
 		}
 
 		return FormatJson::encode( $messages, "\t", FormatJson::ALL_OK ) . "\n";

@@ -10,6 +10,9 @@
  */
 
 // Standard boilerplate to define $IP
+
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
+use Mediawiki\Languages\LanguageNameUtils;
 use MediaWiki\MediaWikiServices;
 
 if ( getenv( 'MW_INSTALL_PATH' ) !== false ) {
@@ -42,7 +45,9 @@ class CreateCheckIndex extends Maintenance {
 	}
 
 	public function execute() {
-		$codes = Language::fetchLanguageNames( null, Language::ALL );
+		$codes = MediaWikiServices::getInstance()
+			->getLanguageNameUtils()
+			->getLanguageNames( null, LanguageNameUtils::ALL );
 
 		// Exclude the documentation language code
 		global $wgTranslateDocumentationLanguageCode;
@@ -130,7 +135,7 @@ class CreateCheckIndex extends Maintenance {
 		}
 
 		$titleConditions = [];
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 
 		foreach ( $problematic as $p ) {
 			// Normalize page key
@@ -153,10 +158,10 @@ class CreateCheckIndex extends Maintenance {
 			$inserts[] = [
 				'rt_page' => $row->page_id,
 				'rt_revision' => $row->page_latest,
-				'rt_type' => RevTag::getType( 'fuzzy' )
+				'rt_type' => RevTagStore::FUZZY_TAG
 			];
 		}
-		$dbw->replace( 'revtag', 'rt_type_page_revision', $inserts, __METHOD__ );
+		$dbw->replace( 'revtag', [ [ 'rt_type', 'rt_page', 'rt_revision' ] ], $inserts, __METHOD__ );
 	}
 }
 

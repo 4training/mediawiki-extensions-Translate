@@ -14,7 +14,7 @@ class BaseValidatorTestCase extends MediaWikiUnitTestCase {
 		MessageValidator $validator,
 		string $type,
 		string $definition,
-		string $translation,
+		?string $translation,
 		array $subTypes,
 		string $msg
 	) {
@@ -32,7 +32,7 @@ class BaseValidatorTestCase extends MediaWikiUnitTestCase {
 
 	/** @return string[] */
 	private static function getSubTypes( ValidationIssues $issues ): array {
-		return array_map( function ( ValidationIssue $x ) {
+		return array_map( static function ( ValidationIssue $x ) {
 			return $x->subType();
 		}, iterator_to_array( $issues ) );
 	}

@@ -6,7 +6,6 @@ namespace MediaWiki\Extension\Translate\Cache;
 use DateInterval;
 use DateTime;
 use InvalidArgumentException;
-use MediaWiki\Extension\Translate\Utilities\Json\JsonCodec;
 use MediaWiki\MediaWikiServices;
 use MediaWikiIntegrationTestCase;
 
@@ -20,8 +19,9 @@ class PersistentDatabaseCacheTest extends MediaWikiIntegrationTestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
-		$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
-		$jsonCodec = new JsonCodec();
+		$mwServices = MediaWikiServices::getInstance();
+		$lb = $mwServices->getDBLoadBalancer();
+		$jsonCodec = $mwServices->getJsonCodec();
 		$this->persistentCache = new PersistentDatabaseCache( $lb, $jsonCodec );
 	}
 
@@ -174,6 +174,20 @@ class PersistentDatabaseCacheTest extends MediaWikiIntegrationTestCase {
 		$this->expectExceptionMessageMatches( '/the length of tag/i' );
 
 		new PersistentCacheEntry( 'testkey', null, null, $longTestTag );
+	}
+
+	public function testExtendGroupExpiryTime() {
+		$tomorrow = ( new DateTime() )->add( new DateInterval( 'P1D' ) );
+		$key = 'hello';
+		$incrementedTime = $tomorrow->getTimestamp() + 100;
+
+		$entry = new PersistentCacheEntry( $key, 'value', $tomorrow->getTimestamp() );
+
+		$this->persistentCache->set( $entry );
+		$this->persistentCache->setExpiry( $key, $incrementedTime );
+
+		$cacheEntry = $this->persistentCache->get( $key );
+		$this->assertEquals( $incrementedTime, $cacheEntry[0]->exptime() );
 	}
 
 	public function provideTestSet() {

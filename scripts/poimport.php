@@ -9,6 +9,8 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+
 // Standard boilerplate to define $IP
 if ( getenv( 'MW_INSTALL_PATH' ) !== false ) {
 	$IP = getenv( 'MW_INSTALL_PATH' );
@@ -228,12 +230,12 @@ class WikiWriter {
 	private $group;
 
 	/**
-	 * @param array $changes Array of key/langcode => translation.
+	 * @param string[] $changes Array of key/langcode => translation.
 	 * @param string $groupId Group ID.
 	 * @param string $user User who makes the edits in wiki.
 	 * @param bool $dryrun Do not do anything that affects the database.
 	 */
-	public function __construct( $changes, $groupId, $user, $dryrun = true ) {
+	public function __construct( array $changes, $groupId, $user, $dryrun = true ) {
 		$this->changes = $changes;
 		$this->group = MessageGroups::getGroup( $groupId );
 		$this->user = User::newFromName( $user );
@@ -300,14 +302,12 @@ class WikiWriter {
 			return;
 		}
 
-		$page = WikiPage::factory( $title );
+		$page = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( $text, $title );
-		$status = $page->doEditContent(
+		$status = $page->doUserEditContent(
 			$content,
-			'Updating translation from gettext import',
-			0,
-			false,
-			$this->user
+			$this->user,
+			'Updating translation from gettext import'
 		);
 
 		if ( $status === true || ( is_object( $status ) && $status->isOK() ) ) {

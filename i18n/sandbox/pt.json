@@ -4,6 +4,7 @@
 			"Felipe L. Ewald",
 			"Fúlvio",
 			"Hamilton Abreu",
+			"Mansil alfalb",
 			"Vitorvicentevalente"
 		]
 	},
@@ -39,7 +40,7 @@
 	"tsb-accept-confirmation": "{{PLURAL:$1|Utilizador aceitado|Utilizadores aceitados}}",
 	"translationstash": "Bem-vindo(a)",
 	"translate-translationstash-welcome": "{{GENDER:$1|Bem-vindo $1, é um novo tradutor|Bem-vinda $1, é uma nova tradutora}}",
-	"translate-translationstash-welcome-note": "Familiarize-se com as ferramentas de tradução. Traduza algumas mensagens o obtenha todos os privilégios de tradutor para participar nos seus projetos preferidos.",
+	"translate-translationstash-welcome-note": "Familiarize-se com as ferramentas de tradução. Traduza algumas mensagens e obtenha todos os privilégios de tradutor para participar nos seus projetos preferidos.",
 	"translate-translationstash-initialtranslation": "A sua tradução inicial",
 	"translate-translationstash-translations": "$1 {{PLURAL:$1|tradução concluída|traduções concluídas}}",
 	"translate-translationstash-skip-button-label": "Tentar outra",

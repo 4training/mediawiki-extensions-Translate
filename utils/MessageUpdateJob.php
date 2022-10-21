@@ -9,9 +9,10 @@
  */
 
 use MediaWiki\Extension\Translate\Jobs\GenericTranslateJob;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
+use MediaWiki\Extension\Translate\MessageProcessing\TranslateReplaceTitle;
 use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
-use MediaWiki\Extension\Translate\Utilities\TranslateReplaceTitle;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -107,11 +108,16 @@ class MessageUpdateJob extends GenericTranslateJob {
 		}
 
 		$title = $this->title;
-		$wikiPage = WikiPage::factory( $title );
+		$wikiPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $title );
 		$summary = wfMessage( 'translate-manage-import-summary' )
 			->inContentLanguage()->plain();
 		$content = ContentHandler::makeContent( $params['content'], $title );
-		$editStatus = $wikiPage->doEditContent( $content, $summary, $flags, false, $user );
+		$editStatus = $wikiPage->doUserEditContent(
+			$content,
+			$user,
+			$summary,
+			$flags
+		);
 		if ( !$editStatus->isOK() ) {
 			$this->logError(
 				'Failed to update content for source message',
@@ -215,7 +221,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 		unset( $languages[$wgTranslateDocumentationLanguageCode] );
 		$languages = array_keys( $languages );
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$fields = [ 'page_id', 'page_latest' ];
 		$conds = [ 'page_namespace' => $title->getNamespace() ];
 
@@ -238,7 +244,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 		$inserts = [];
 		foreach ( $res as $row ) {
 			$inserts[] = [
-				'rt_type' => RevTag::getType( 'fuzzy' ),
+				'rt_type' => RevTagStore::FUZZY_TAG,
 				'rt_page' => $row->page_id,
 				'rt_revision' => $row->page_latest,
 			];
@@ -268,12 +274,18 @@ class MessageUpdateJob extends GenericTranslateJob {
 	private function processTranslationChanges(
 		array $langChanges, $baseTitle, $groupNamespace, $summary, $flags, User $user
 	) {
+		$wikiPageFactory = MediaWikiServices::getInstance()->getWikiPageFactory();
 		foreach ( $langChanges as $code => $contentStr ) {
 			$titleStr = TranslateUtils::title( $baseTitle, $code, $groupNamespace );
 			$title = Title::newFromText( $titleStr, $groupNamespace );
-			$wikiPage = WikiPage::factory( $title );
+			$wikiPage = $wikiPageFactory->newFromTitle( $title );
 			$content = ContentHandler::makeContent( $contentStr, $title );
-			$status = $wikiPage->doEditContent( $content, $summary, $flags, false, $user );
+			$status = $wikiPage->doUserEditContent(
+				$content,
+				$user,
+				$summary,
+				$flags
+			);
 			if ( !$status->isOK() ) {
 				$this->logError(
 					'Failed to update content for non-source message',
@@ -304,7 +316,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 		$groupIds = $sourceMessageHandle->getGroupIds();
 		if ( !$groupIds ) {
 			$this->logWarning(
-				'Could not find group Id for message title',
+				"Could not find group Id for message title: {$currentTitle->getPrefixedDBkey()}",
 				$this->getParams()
 			);
 			return;
@@ -322,6 +334,7 @@ class MessageUpdateJob extends GenericTranslateJob {
 
 		if ( $groupSyncCache->isMessageBeingProcessed( $groupId, $messageKey ) ) {
 			$groupSyncCache->removeMessages( $groupId, $messageKey );
+			$groupSyncCache->extendGroupExpiryTime( $groupId );
 		} else {
 			$this->logWarning(
 				"Did not find key: $messageKey; in group: $groupId in group sync cache",

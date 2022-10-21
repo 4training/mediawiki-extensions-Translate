@@ -1,7 +1,7 @@
 'use strict';
-/* eslint-env node */
+
 module.exports = function ( grunt ) {
-	var conf = grunt.file.readJSON( 'extension.json' );
+	const conf = grunt.file.readJSON( 'extension.json' );
 
 	grunt.loadNpmTasks( 'grunt-eslint' );
 	grunt.loadNpmTasks( 'grunt-banana-checker' );
@@ -28,7 +28,7 @@ module.exports = function ( grunt ) {
 				'!resources/lib/**'
 			]
 		},
-		// eslint-disable-next-line es/no-object-assign
+		// eslint-disable-next-line compat/compat
 		banana: Object.assign( conf.MessagesDirs, {
 			options: {
 				requireLowerCase: 'initial'

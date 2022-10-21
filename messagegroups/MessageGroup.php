@@ -23,13 +23,6 @@ use MediaWiki\Extension\Translate\Validation\ValidationRunner;
  */
 interface MessageGroup {
 	/**
-	 * Returns the parsed YAML configuration.
-	 * @todo Remove from the interface. Only usage is in FFS. Figure out a better way.
-	 * @return array
-	 */
-	public function getConfiguration();
-
-	/**
 	 * Returns the unique identifier for this group.
 	 * @return string
 	 */
@@ -83,13 +76,6 @@ interface MessageGroup {
 	public function exists();
 
 	/**
-	 * Returns a FFS object that handles reading and writing messages to files.
-	 * May also return null if it doesn't make sense.
-	 * @return FFS|null
-	 */
-	public function getFFS();
-
-	/**
 	 * Returns a message validator object or null.
 	 * @return ValidationRunner|null
 	 */
@@ -98,7 +84,7 @@ interface MessageGroup {
 	/**
 	 * Return a message mangler or null.
 	 * @todo Make an interface for message manglers
-	 * @return StringMatcher|null
+	 * @return \MediaWiki\Extension\Translate\MessageProcessing\StringMatcher|null
 	 */
 	public function getMangler();
 
@@ -163,17 +149,16 @@ interface MessageGroup {
 	public function getMessageGroupStates();
 
 	/**
-	 * Get all the translatable languages for a group, considering the whitelisting
-	 * and blacklisting.
+	 * Get all the translatable languages for a group, considering the inclusion
+	 * and exclusion list.
 	 * @return array|null The language codes as array keys.
 	 */
 	public function getTranslatableLanguages();
 
 	/**
-	 * List of available message types mapped to the classes
-	 * implementing them.
+	 * Gets support URL defined for the group if any
 	 *
-	 * @return array
+	 * @return array|null
 	 */
-	public function getTranslationAids();
+	public function getSupportConfig(): ?array;
 }

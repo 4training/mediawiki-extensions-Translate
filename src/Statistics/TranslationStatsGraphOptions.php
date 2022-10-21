@@ -15,7 +15,7 @@ class TranslationStatsGraphOptions {
 	/** @var FormOptions */
 	private $formOptions;
 	/** @var string[] */
-	public const VALID_SCALES = [ 'months', 'weeks', 'days', 'hours' ];
+	public const VALID_SCALES = [ 'years', 'months', 'weeks', 'days', 'hours' ];
 
 	public function __construct() {
 		$this->formOptions = new FormOptions();
@@ -108,5 +108,3 @@ class TranslationStatsGraphOptions {
 		$this->formOptions->validateIntBounds( $key, $min, $max );
 	}
 }
-
-class_alias( TranslationStatsGraphOptions::class, '\MediaWiki\Extensions\Translate\TranslationStatsGraphOptions' );

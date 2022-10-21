@@ -5,7 +5,8 @@ namespace MediaWiki\Extension\Translate\PageTranslation;
 
 use FatMessage;
 use Language;
-use MediaWikiTestCase;
+use MediaWikiIntegrationTestCase;
+use Title;
 use WikiPageMessageGroup;
 
 /**
@@ -13,7 +14,7 @@ use WikiPageMessageGroup;
  * @license GPL-2.0-or-later
  * @covers \MediaWiki\Extension\Translate\PageTranslation\TranslationPage
  */
-class TranslationPageTest extends MediaWikiTestCase {
+class TranslationPageTest extends MediaWikiIntegrationTestCase {
 	/** @dataProvider provideTestGenerateSourceFromTranslations */
 	public function testGenerateSourceFromTranslations(
 		bool $inline,
@@ -28,9 +29,7 @@ class TranslationPageTest extends MediaWikiTestCase {
 		$unitMap = [];
 		foreach ( $messages as $id => $m ) {
 			/** @var FatMessage $m */
-			$unit = new TranslationUnit();
-			$unit->id = $id;
-			$unit->text = $m->definition();
+			$unit = new TranslationUnit( $m->definition(), (string)$id );
 			$unit->setIsInline( $inline );
 			$unit->setCanWrap( $canWrap );
 
@@ -49,7 +48,7 @@ class TranslationPageTest extends MediaWikiTestCase {
 			Language::factory( 'en' ),
 			true /*$showOutdated*/,
 			$wrapUntranslated,
-			'' /*$prefix*/
+			Title::newFromText( __METHOD__ )
 		);
 
 		$actual = $translationPage->generateSourceFromTranslations( $messages );

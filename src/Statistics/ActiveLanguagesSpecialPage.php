@@ -6,13 +6,16 @@ namespace MediaWiki\Extension\Translate\Statistics;
 use Config;
 use Html;
 use HtmlArmor;
+use InvalidArgumentException;
+use Language;
+use LanguageCode;
 use LinkBatch;
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\Extension\Translate\Utilities\ConfigHelper;
 use MediaWiki\Languages\LanguageNameUtils;
 use MediaWiki\Logger\LoggerFactory;
 use ObjectCache;
 use SpecialPage;
-use StatsTable;
 use Title;
 use Wikimedia\Rdbms\ILoadBalancer;
 
@@ -33,11 +36,18 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	private $langNameUtils;
 	/** @var ILoadBalancer */
 	private $loadBalancer;
+	/** @var ConfigHelper */
+	private $configHelper;
+	/** @var Language */
+	private $contentLanguage;
+	/** @var ProgressStatsTableFactory */
+	private $progressStatsTableFactory;
+	/** @var StatsTable */
+	private $progressStatsTable;
 	/** @var int Cutoff time for inactivity in days */
 	private $period = 180;
 
 	public const CONSTRUCTOR_OPTIONS = [
-		'TranslateAuthorBlacklist',
 		'TranslateMessageNamespaces',
 	];
 
@@ -45,13 +55,19 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 		Config $config,
 		TranslatorActivity $translatorActivity,
 		LanguageNameUtils $langNameUtils,
-		ILoadBalancer $loadBalancer
+		ILoadBalancer $loadBalancer,
+		ConfigHelper $configHelper,
+		Language $contentLanguage,
+		ProgressStatsTableFactory $progressStatsTableFactory
 	) {
 		parent::__construct( 'SupportedLanguages' );
 		$this->options = new ServiceOptions( self::CONSTRUCTOR_OPTIONS, $config );
 		$this->translatorActivity = $translatorActivity;
 		$this->langNameUtils = $langNameUtils;
 		$this->loadBalancer = $loadBalancer;
+		$this->configHelper = $configHelper;
+		$this->contentLanguage = $contentLanguage;
+		$this->progressStatsTableFactory = $progressStatsTableFactory;
 	}
 
 	protected function getGroupName() {
@@ -65,6 +81,7 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	public function execute( $par ) {
 		$out = $this->getOutput();
 		$lang = $this->getLanguage();
+		$this->progressStatsTable = $this->progressStatsTableFactory->newFromContext( $this->getContext() );
 
 		$this->setHeaders();
 		$out->addModuleStyles( 'ext.translate.specialpages.styles' );
@@ -75,10 +92,13 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 
 		$this->outputHeader( 'supportedlanguages-summary' );
 		$dbr = $this->loadBalancer->getConnectionRef( DB_REPLICA );
-		if ( $dbr->getType() === 'sqlite' ) {
-			$out->wrapWikiMsg(
-				'<div class="errorbox">$1</div>',
-				'supportedlanguages-sqlite-error'
+		$dbType = $dbr->getType();
+		if ( $dbType === 'sqlite' || $dbType === 'postgres' ) {
+			$out->addHTML(
+				Html::errorBox(
+					// Messages used: supportedlanguages-sqlite-error, supportedlanguages-postgres-error
+					$out->msg( 'supportedlanguages-' . $dbType . '-error' )->parse()
+				)
 			);
 			return;
 		}
@@ -93,16 +113,23 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 		$this->outputLanguageCloud( $languages, $names );
 		$out->addWikiMsg( 'supportedlanguages-count', $lang->formatNum( count( $languages ) ) );
 
-		if ( !$par || !$this->langNameUtils->isKnownLanguageTag( $par ) ) {
+		if ( !$par ) {
 			return;
 		}
 
-		$language = $par;
+		// Convert formatted language tag like zh-Hant to internal format like zh-hant
+		$language = strtolower( $par );
 		try {
 			$data = $this->translatorActivity->inLanguage( $language );
 		} catch ( StatisticsUnavailable $e ) {
 			// generic-pool-error is from MW core
-			$out->wrapWikiMsg( '<div class="warningbox">$1</div>', 'generic-pool-error' );
+			$out->addHTML( Html::errorBox( $this->msg( 'generic-pool-error' )->parse() ) );
+			return;
+		} catch ( InvalidArgumentException $e ) {
+			$errorMessageHtml = $this->msg( 'translate-activelanguages-invalid-code' )
+				->params( LanguageCode::bcp47( $language ) )
+				->parse();
+			$out->addHTML( Html::errorBox( $errorMessageHtml ) );
 			return;
 		}
 
@@ -115,6 +142,7 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	private function showLanguage( string $code, array $users, int $cachedAt ): void {
 		$out = $this->getOutput();
 		$lang = $this->getLanguage();
+		$bcp47Code = LanguageCode::bcp47( $code );
 
 		// Information to be used inside the foreach loop.
 		$linkInfo = [];
@@ -127,12 +155,13 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 		$native = $this->langNameUtils->getLanguageName( $code, null, 'all' );
 
 		if ( $local !== $native ) {
+
 			$headerText = $this->msg( 'supportedlanguages-portallink' )
-				->params( $code, $local, $native )->escaped();
+				->params( $bcp47Code, $local, $native )->escaped();
 		} else {
 			// No CLDR, so a less localised header and link title.
 			$headerText = $this->msg( 'supportedlanguages-portallink-nocldr' )
-				->params( $code, $native )->escaped();
+				->params( $bcp47Code, $native )->escaped();
 		}
 
 		$out->addHTML( Html::rawElement( 'h2', [ 'id' => $code ], $headerText ) );
@@ -185,8 +214,7 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 		$fields = [ 'substring_index(rc_title, \'/\', -1) as lang', 'count(*) as count' ];
 		$timestamp = $dbr->timestamp( wfTimestamp( TS_UNIX ) - 60 * 60 * 24 * $this->period );
 		$conds = [
-			# Without the quotes the rc_timestamp index isn't used and this query is much slower
-			"rc_timestamp > '$timestamp'",
+			'rc_timestamp > ' . $dbr->addQuotes( $timestamp ),
 			'rc_namespace' => $this->options->get( 'TranslateMessageNamespaces' ),
 			'rc_title' . $dbr->buildLike( $dbr->anyString(), '/', $dbr->anyString() ),
 		];
@@ -205,28 +233,10 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	}
 
 	protected function filterUsers( array $users, string $code ): array {
-		$blacklist = $this->options->get( 'TranslateAuthorBlacklist' );
-
 		foreach ( $users as $index => $user ) {
 			$username = $user[TranslatorActivityQuery::USER_NAME];
-			# We do not know the group
-			$hash = "#;$code;$username";
-
-			$blacklisted = false;
-			foreach ( $blacklist as $rule ) {
-				[ $type, $regex ] = $rule;
-
-				if ( preg_match( $regex, $hash ) ) {
-					if ( $type === 'white' ) {
-						$blacklisted = false;
-						break;
-					} else {
-						$blacklisted = true;
-					}
-				}
-			}
-
-			if ( $blacklisted ) {
+			// We do not know the group
+			if ( $this->configHelper->isAuthorExcluded( '#', $code, $username ) ) {
 				unset( $users[$index] );
 			}
 		}
@@ -235,19 +245,26 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	}
 
 	protected function outputLanguageCloud( array $languages, array $names ) {
+		global $wgTranslateDocumentationLanguageCode;
+
 		$out = $this->getOutput();
 
 		$out->addHTML( '<div class="tagcloud autonym">' );
 
 		foreach ( $languages as $k => $v ) {
 			$name = $names[$k];
+			$langAttribute = $k;
 			$size = round( log( $v ) * 20 ) + 10;
+
+			if ( $langAttribute === $wgTranslateDocumentationLanguageCode ) {
+				$langAttribute = $this->contentLanguage->getHtmlCode();
+			}
 
 			$params = [
 				'href' => $this->getPageTitle( $k )->getLocalURL(),
 				'class' => 'tag',
 				'style' => "font-size:$size%",
-				'lang' => $k,
+				'lang' => $langAttribute,
 			];
 
 			$tag = Html::element( 'a', $params, $name );
@@ -264,10 +281,8 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 		$period = $this->period;
 
 		$links = [];
-		$statsTable = new StatsTable();
-
 		// List users in descending order by number of translations in this language
-		usort( $userStats, function ( $a, $b ) {
+		usort( $userStats, static function ( $a, $b ) {
 			return -(
 				$a[TranslatorActivityQuery::USER_TRANSLATIONS]
 				<=>
@@ -303,7 +318,7 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 					->text();
 			$last = max( 1, min( $period, $last ) );
 			$styles['border-bottom'] =
-				'3px solid #' . $statsTable->getBackgroundColor( ( $period - $last ) / $period );
+				'3px solid #' . $this->progressStatsTable->getBackgroundColor( ( $period - $last ) / $period );
 
 			$stylestr = $this->formatStyle( $styles );
 			if ( $stylestr ) {
@@ -354,12 +369,11 @@ class ActiveLanguagesSpecialPage extends SpecialPage {
 	protected function getColorLegend() {
 		$legend = '';
 		$period = $this->period;
-		$statsTable = new StatsTable();
 
 		for ( $i = 0; $i <= $period; $i += 30 ) {
 			$iFormatted = htmlspecialchars( $this->getLanguage()->formatNum( $i ) );
 			$legend .= '<span style="background-color:#' .
-				$statsTable->getBackgroundColor( ( $period - $i ) / $period ) .
+				$this->progressStatsTable->getBackgroundColor( ( $period - $i ) / $period ) .
 				"\"> $iFormatted</span>";
 		}
 

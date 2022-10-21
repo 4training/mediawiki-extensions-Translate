@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace MediaWiki\Extension\Translate\Statistics;
 
-use ActorMigration;
 use MediaWiki\MediaWikiServices;
 use TranslateUtils;
 
@@ -14,14 +13,14 @@ use TranslateUtils;
  * @since 2010.07
  */
 class TranslatePerLanguageStats extends TranslationStatsBase {
-	/** @var int[][] array( string => int ) Cache used to count active users only once per day. */
-	protected $usercache;
+	/** @var array For client side group by time period */
+	protected $seenUsers;
 	protected $groups;
 
 	public function __construct( TranslationStatsGraphOptions $opts ) {
 		parent::__construct( $opts );
-		// This query is slow... ensure a lower limit.
-		$opts->boundValue( 'days', 1, 200 );
+		// This query is slow. Set a lower limit, but allow seeing one year at once.
+		$opts->boundValue( 'days', 1, 400 );
 	}
 
 	public function preQuery( &$tables, &$fields, &$conds, &$type, &$options, &$joins, $start, $end ) {
@@ -66,29 +65,21 @@ class TranslatePerLanguageStats extends TranslationStatsBase {
 		}
 
 		if ( $this->opts->getValue( 'count' ) === 'users' ) {
-			if ( class_exists( ActorMigration::class ) ) {
-				$actorQuery = ActorMigration::newMigration()->getJoin( 'rc_user' );
-				$tables += $actorQuery['tables'];
-				$fields['rc_user_text'] = $actorQuery['fields']['rc_user_text'];
-				$joins += $actorQuery['joins'];
-			} else {
-				$fields[] = 'rc_user_text';
-			}
+			$fields[] = 'rc_actor';
 		}
 
 		$type .= '-perlang';
 	}
 
 	public function indexOf( $row ) {
-		// We need to check that there is only one user per day.
 		if ( $this->opts->getValue( 'count' ) === 'users' ) {
 			$date = $this->formatTimestamp( $row->rc_timestamp );
 
-			if ( isset( $this->usercache[$date][$row->rc_user_text] ) ) {
+			if ( isset( $this->seenUsers[$date][$row->rc_actor] ) ) {
 				return false;
-			} else {
-				$this->usercache[$date][$row->rc_user_text] = 1;
 			}
+
+			$this->seenUsers[$date][$row->rc_actor] = true;
 		}
 
 		// Do not consider language-less pages.
@@ -102,7 +93,7 @@ class TranslatePerLanguageStats extends TranslationStatsBase {
 		}
 
 		// The key-building needs to be in sync with ::labels().
-		list( $key, $code ) = TranslateUtils::figureMessage( $row->rc_title );
+		[ $key, $code ] = TranslateUtils::figureMessage( $row->rc_title );
 
 		$groups = [];
 		$codes = [];
@@ -189,6 +180,9 @@ class TranslatePerLanguageStats extends TranslationStatsBase {
 			case 'months':
 				$cut = 8;
 				break;
+			case 'years':
+				$cut = 10;
+				break;
 			default:
 				return MediaWikiServices::getInstance()->getContentLanguage()
 					->sprintfDate( $this->getDateFormat(), $timestamp );
@@ -197,5 +191,3 @@ class TranslatePerLanguageStats extends TranslationStatsBase {
 		return substr( $timestamp, 0, -$cut );
 	}
 }
-
-class_alias( TranslatePerLanguageStats::class, '\MediaWiki\Extensions\Translate\TranslatePerLanguageStats' );

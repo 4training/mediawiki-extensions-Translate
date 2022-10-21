@@ -6,6 +6,7 @@ namespace MediaWiki\Extension\Translate\TranslatorSandbox;
 use FormatJson;
 use Html;
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\User\UserOptionsLookup;
 use MWTimestamp;
 use Sanitizer;
 use SpecialPage;
@@ -23,6 +24,8 @@ use User;
 class ManageTranslatorSandboxSpecialPage extends SpecialPage {
 	/** @var TranslationStashReader */
 	private $stash;
+	/** @var UserOptionsLookup */
+	private $userOptionsLookup;
 
 	public const CONSTRUCTOR_OPTIONS = [
 		'TranslateUseSandbox',
@@ -30,9 +33,11 @@ class ManageTranslatorSandboxSpecialPage extends SpecialPage {
 
 	public function __construct(
 		TranslationStashReader $stash,
+		UserOptionsLookup $userOptionsLookup,
 		ServiceOptions $options
 	) {
 		$this->stash = $stash;
+		$this->userOptionsLookup = $userOptionsLookup;
 
 		parent::__construct(
 			'ManageTranslatorSandbox',
@@ -69,10 +74,10 @@ class ManageTranslatorSandboxSpecialPage extends SpecialPage {
 	private function showPage(): void {
 		$out = $this->getOutput();
 
-		$nojs = Html::element(
-			'div',
-			[ 'class' => 'tux-nojs errorbox' ],
-			$this->msg( 'tux-nojs' )->plain()
+		$nojs = Html::errorBox(
+			$this->msg( 'tux-nojs' )->plain(),
+			'',
+			'tux-nojs'
 		);
 		$out->addHTML( $nojs );
 
@@ -119,7 +124,7 @@ HTML;
 
 		/** @var User $user */
 		foreach ( $users as $user ) {
-			$reminders = $user->getOption( 'translate-sandbox-reminders' );
+			$reminders = $this->userOptionsLookup->getOption( $user, 'translate-sandbox-reminders' );
 			$reminders = $reminders ? explode( '|', $reminders ) : [];
 			$remindersCount = count( $reminders );
 			if ( $remindersCount ) {
@@ -134,11 +139,11 @@ HTML;
 			$requests[] = [
 				'username' => $user->getName(),
 				'email' => $user->getEmail(),
-				'gender' => $user->getOption( 'gender' ),
+				'gender' => $this->userOptionsLookup->getOption( $user, 'gender' ),
 				'registrationdate' => $user->getRegistration(),
 				'translations' => count( $this->stash->getTranslations( $user ) ),
 				'languagepreferences' => FormatJson::decode(
-					$user->getOption( 'translate-sandbox' )
+					$this->userOptionsLookup->getOption( $user, 'translate-sandbox' )
 				),
 				'userid' => $user->getId(),
 				'reminderscount' => $remindersCount,
@@ -150,7 +155,6 @@ HTML;
 		usort( $requests, [ $this, 'translatorRequestSort' ] );
 
 		foreach ( $requests as $request ) {
-			// @phan-suppress-next-line SecurityCheck-DoubleEscaped
 			$items[] = $this->makeRequestItem( $request );
 		}
 
@@ -164,7 +168,7 @@ HTML;
 		</button>
 	</div>
 	<div class="five columns request-count"></div>
-	<div class="three columns center">
+	<div class="three columns text-center">
 		<input class="request-selector-all" name="request" type="checkbox" />
 	</div>
 </div>
@@ -195,7 +199,7 @@ HTML;
 		<div class="row username">$nameEnc</div>
 		<div class="row email" dir="ltr">$emailEnc</div>
 	</div>
-	<div class="three columns approval center">
+	<div class="three columns approval text-center">
 		<input class="row request-selector" name="request" type="checkbox" />
 		<div class="row signup-age">$agoEnc</div>
 	</div>
@@ -217,8 +221,3 @@ HTML;
 				?: strnatcasecmp( $a['username'], $b['username'] );
 	}
 }
-
-class_alias(
-	ManageTranslatorSandboxSpecialPage::class,
-	'\MediaWiki\Extensions\Translate\ManageTranslatorSandboxSpecialPage'
-);

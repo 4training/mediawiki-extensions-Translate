@@ -8,19 +8,38 @@
  */
 
 use MediaWiki\Config\ServiceOptions;
+use MediaWiki\Extension\AbuseFilter\Variables\VariableHolder;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\DeleteTranslatableBundleJob;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\MoveTranslatableBundleJob;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
+use MediaWiki\Extension\Translate\MessageGroupProcessing\TranslatableBundleLogFormatter;
+use MediaWiki\Extension\Translate\PageTranslation\DeleteTranslatableBundleSpecialPage;
+use MediaWiki\Extension\Translate\PageTranslation\Hooks;
+use MediaWiki\Extension\Translate\PageTranslation\MigrateTranslatablePageSpecialPage;
+use MediaWiki\Extension\Translate\PageTranslation\PageTranslationSpecialPage;
+use MediaWiki\Extension\Translate\PageTranslation\PrepareTranslatablePageSpecialPage;
+use MediaWiki\Extension\Translate\PageTranslation\RenderTranslationPageJob;
+use MediaWiki\Extension\Translate\PageTranslation\UpdateTranslatablePageJob;
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
 use MediaWiki\Extension\Translate\SystemUsers\TranslateUserManager;
 use MediaWiki\Extension\Translate\TranslatorSandbox\ManageTranslatorSandboxSpecialPage;
+use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashActionApi;
 use MediaWiki\Extension\Translate\TranslatorSandbox\TranslationStashSpecialPage;
-use MediaWiki\Hook\BeforeParserFetchTemplateRevisionRecordHook;
-use MediaWiki\Hook\PageMoveCompleteHook;
-use MediaWiki\Hook\SidebarBeforeOutputHook;
+use MediaWiki\Extension\Translate\TranslatorSandbox\TranslatorSandboxActionApi;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\Hook\RevisionRecordInsertedHook;
+use MediaWiki\Revision\RevisionLookup;
+use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
- * Some hooks for Translate extension.
+ * Hooks for Translate extension.
+ *
+ * Main subsystems, like page translation, should have their own hook handler.
+ *
+ * Most of the hooks on this class are still old style static functions, but new new hooks should
+ * use the new style hook handlers with interfaces.
  */
-class TranslateHooks {
+class TranslateHooks implements RevisionRecordInsertedHook {
 	/**
 	 * Any user of this list should make sure that the tables
 	 * actually exist, since they may be optional
@@ -31,6 +50,15 @@ class TranslateHooks {
 		'translate_stash' => 'ts_user',
 		'translate_reviews' => 'trr_user',
 	];
+	/** @var RevisionLookup */
+	private $revisionLookup;
+	/** @var ILoadBalancer */
+	private $loadBalancer;
+
+	public function __construct( RevisionLookup $revisionLookup, ILoadBalancer $loadBalancer ) {
+		$this->revisionLookup = $revisionLookup;
+		$this->loadBalancer = $loadBalancer;
+	}
 
 	/**
 	 * Do late setup that depends on configuration.
@@ -50,26 +78,40 @@ class TranslateHooks {
 			$wgTranslateYamlLibrary = function_exists( 'yaml_parse' ) ? 'phpyaml' : 'spyc';
 		}
 
-		$usePageSaveComplete = version_compare( TranslateUtils::getMWVersion(), '1.35', '>=' );
-		if ( $usePageSaveComplete ) {
-			$wgHooks['PageSaveComplete'][] = 'TranslateEditAddons::onSaveComplete';
-		} else {
-			$wgHooks['PageContentSaveComplete'][] = 'TranslateEditAddons::onSave';
-		}
+		$wgHooks['PageSaveComplete'][] = 'TranslateEditAddons::onSaveComplete';
 
 		// Page translation setup check and init if enabled.
 		global $wgEnablePageTranslation;
 		if ( $wgEnablePageTranslation ) {
 			// Special page and the right to use it
 			global $wgSpecialPages, $wgAvailableRights;
-			$wgSpecialPages['PageTranslation'] = 'SpecialPageTranslation';
-			$wgSpecialPages['PageTranslationDeletePage'] = 'SpecialPageTranslationDeletePage';
+			$wgSpecialPages['PageTranslation'] = [
+				'class' => PageTranslationSpecialPage::class,
+				'services' => [
+					'LanguageNameUtils',
+					'LanguageFactory',
+					'Translate:TranslationUnitStoreFactory',
+					'Translate:TranslatablePageParser',
+					'LinkBatchFactory',
+					'JobQueueGroup',
+				]
+			];
+			$wgSpecialPages['PageTranslationDeletePage'] = [
+				'class' => DeleteTranslatableBundleSpecialPage::class,
+				'services' => [
+					'MainObjectStash',
+					'PermissionManager',
+					'Translate:TranslatableBundleFactory',
+					'Translate:SubpageListBuilder',
+					'JobQueueGroup',
+				]
+			];
 
 			// right-pagetranslation action-pagetranslation
 			$wgAvailableRights[] = 'pagetranslation';
 
-			$wgSpecialPages['PageMigration'] = 'SpecialPageMigration';
-			$wgSpecialPages['PagePreparation'] = 'SpecialPagePreparation';
+			$wgSpecialPages['PageMigration'] = MigrateTranslatablePageSpecialPage::class;
+			$wgSpecialPages['PagePreparation'] = PrepareTranslatablePageSpecialPage::class;
 
 			global $wgActionFilteredLogs, $wgLogActionsHandlers, $wgLogTypes;
 
@@ -81,20 +123,19 @@ class TranslateHooks {
 			// logentry-pagetranslation-discourage logentry-pagetranslation-prioritylanguages
 			// logentry-pagetranslation-associate logentry-pagetranslation-dissociate
 			$wgLogTypes[] = 'pagetranslation';
-			$wgLogActionsHandlers['pagetranslation/mark'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/unmark'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/moveok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/movenok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/deletelok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/deletefok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/deletelnok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/deletefnok'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/encourage'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/discourage'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/prioritylanguages'] =
-				'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/associate'] = 'PageTranslationLogFormatter';
-			$wgLogActionsHandlers['pagetranslation/dissociate'] = 'PageTranslationLogFormatter';
+			$wgLogActionsHandlers['pagetranslation/mark'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/unmark'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/moveok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/movenok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/deletelok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/deletefok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/deletelnok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/deletefnok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/encourage'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/discourage'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/prioritylanguages'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/associate'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['pagetranslation/dissociate'] = TranslatableBundleLogFormatter::class;
 			$wgActionFilteredLogs['pagetranslation'] = [
 				'mark' => [ 'mark' ],
 				'unmark' => [ 'unmark' ],
@@ -106,13 +147,30 @@ class TranslateHooks {
 				'aggregategroups' => [ 'associate', 'dissociate' ],
 			];
 
+			$wgLogTypes[] = 'messagebundle';
+			$wgLogActionsHandlers['messagebundle/moveok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['messagebundle/movenok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['messagebundle/deletefok'] = TranslatableBundleLogFormatter::class;
+			$wgLogActionsHandlers['messagebundle/deletefnok'] = TranslatableBundleLogFormatter::class;
+			$wgActionFilteredLogs['messagebundle'] = [
+				'move' => [ 'moveok', 'movenok' ],
+				'delete' => [ 'deletefok', 'deletefnok' ],
+			];
+
 			global $wgJobClasses;
-			$wgJobClasses['TranslateRenderJob'] = 'TranslateRenderJob';
-			$wgJobClasses['RenderJob'] = 'TranslateRenderJob';
-			$wgJobClasses['TranslatablePageMoveJob'] = 'TranslatablePageMoveJob';
-			$wgJobClasses['TranslateDeleteJob'] = 'TranslateDeleteJob';
-			$wgJobClasses['DeleteJob'] = 'TranslateDeleteJob';
-			$wgJobClasses['TranslationsUpdateJob'] = 'TranslationsUpdateJob';
+			$wgJobClasses['RenderTranslationPageJob'] = RenderTranslationPageJob::class;
+			// Remove after MLEB 2022.10 release
+			$wgJobClasses['TranslateRenderJob'] = RenderTranslationPageJob::class;
+			// Remove after MLEB 2022.07 release
+			$wgJobClasses['TranslatableBundleMoveJob'] = MoveTranslatableBundleJob::class;
+			$wgJobClasses['MoveTranslatableBundleJob'] = MoveTranslatableBundleJob::class;
+			// Remove after MLEB 2022.07 release
+			$wgJobClasses['TranslatableBundleDeleteJob'] = DeleteTranslatableBundleJob::class;
+			$wgJobClasses['DeleteTranslatableBundleJob'] = DeleteTranslatableBundleJob::class;
+
+			$wgJobClasses['UpdateTranslatablePageJob'] = UpdateTranslatablePageJob::class;
+			// Remove after MLEB 2022.10 release
+			$wgJobClasses['TranslationsUpdateJob'] = UpdateTranslatablePageJob::class;
 
 			// Namespaces
 			global $wgNamespacesWithSubpages, $wgNamespaceProtection;
@@ -128,76 +186,71 @@ class TranslateHooks {
 			/// Page translation hooks
 
 			/// Register our CSS and metadata
-			$wgHooks['BeforePageDisplay'][] = 'PageTranslationHooks::onBeforePageDisplay';
+			$wgHooks['BeforePageDisplay'][] = [ Hooks::class, 'onBeforePageDisplay' ];
+
+			// Disable VE
+			$wgHooks['VisualEditorBeforeEditor'][] = [ Hooks::class, 'onVisualEditorBeforeEditor' ];
 
 			// Check syntax for \<translate>
-			$wgHooks['PageContentSave'][] = 'PageTranslationHooks::tpSyntaxCheck';
+			$wgHooks['MultiContentSave'][] = [ Hooks::class, 'tpSyntaxCheck' ];
 			$wgHooks['EditFilterMergedContent'][] =
-				'PageTranslationHooks::tpSyntaxCheckForEditContent';
+				[ Hooks::class, 'tpSyntaxCheckForEditContent' ];
 
 			// Add transtag to page props for discovery
-			if ( $usePageSaveComplete ) {
-				$wgHooks['PageSaveComplete'][] = 'PageTranslationHooks::addTranstagAfterSave';
-			} else {
-				$wgHooks['PageContentSaveComplete'][] = 'PageTranslationHooks::addTranstag';
-			}
-			$wgHooks['RevisionRecordInserted'][] =
-				'PageTranslationHooks::updateTranstagOnNullRevisions';
+			$wgHooks['PageSaveComplete'][] = [ Hooks::class, 'addTranstagAfterSave' ];
+
+			$wgHooks['RevisionRecordInserted'][] = [ Hooks::class, 'updateTranstagOnNullRevisions' ];
 
 			// Register different ways to show language links
 			$wgHooks['ParserFirstCallInit'][] = 'TranslateHooks::setupParserHooks';
-			$wgHooks['LanguageLinks'][] = 'PageTranslationHooks::addLanguageLinks';
-			$wgHooks['SkinTemplateGetLanguageLink'][] = 'PageTranslationHooks::formatLanguageLink';
+			$wgHooks['LanguageLinks'][] = [ Hooks::class, 'addLanguageLinks' ];
+			$wgHooks['SkinTemplateGetLanguageLink'][] = [ Hooks::class, 'formatLanguageLink' ];
 
 			// Strip \<translate> tags etc. from source pages when rendering
-			$wgHooks['ParserBeforeInternalParse'][] = 'PageTranslationHooks::renderTagPage';
+			$wgHooks['ParserBeforeInternalParse'][] = [ Hooks::class, 'renderTagPage' ];
+			// Strip \<translate> tags etc. from source pages when preprocessing
+			$wgHooks['ParserBeforePreprocess'][] = [ Hooks::class, 'preprocessTagPage' ];
 			$wgHooks['ParserOutputPostCacheTransform'][] =
-				'PageTranslationHooks::onParserOutputPostCacheTransform';
+				[ Hooks::class, 'onParserOutputPostCacheTransform' ];
 
-			if ( interface_exists( BeforeParserFetchTemplateRevisionRecordHook::class ) ) {
-				$wgHooks['BeforeParserFetchTemplateRevisionRecord'][] =
-					'PageTranslationHooks::fetchTranslatableTemplateAndTitle';
-			}
+			$wgHooks['BeforeParserFetchTemplateRevisionRecord'][] =
+				[ Hooks::class, 'fetchTranslatableTemplateAndTitle' ];
 
 			// Set the page content language
-			$wgHooks['PageContentLanguage'][] = 'PageTranslationHooks::onPageContentLanguage';
+			$wgHooks['PageContentLanguage'][] = [ Hooks::class, 'onPageContentLanguage' ];
 
 			// Prevent editing of certain pages in translations namespace
 			$wgHooks['getUserPermissionsErrorsExpensive'][] =
-				'PageTranslationHooks::onGetUserPermissionsErrorsExpensive';
+				[ Hooks::class, 'onGetUserPermissionsErrorsExpensive' ];
 			// Prevent editing of translation pages directly
 			$wgHooks['getUserPermissionsErrorsExpensive'][] =
-				'PageTranslationHooks::preventDirectEditing';
+				[ Hooks::class, 'preventDirectEditing' ];
 
 			// Our custom header for translation pages
-			$wgHooks['ArticleViewHeader'][] = 'PageTranslationHooks::translatablePageHeader';
+			$wgHooks['ArticleViewHeader'][] = [ Hooks::class, 'translatablePageHeader' ];
 
 			// Edit notice shown on translatable pages
-			$wgHooks['TitleGetEditNotices'][] = 'PageTranslationHooks::onTitleGetEditNotices';
+			$wgHooks['TitleGetEditNotices'][] = [ Hooks::class, 'onTitleGetEditNotices' ];
 
 			// Custom move page that can move all the associated pages too
-			$wgHooks['SpecialPage_initList'][] = 'PageTranslationHooks::replaceMovePage';
+			$wgHooks['SpecialPage_initList'][] = [ Hooks::class, 'replaceMovePage' ];
 			// Locking during page moves
 			$wgHooks['getUserPermissionsErrorsExpensive'][] =
-				'PageTranslationHooks::lockedPagesCheck';
+				[ Hooks::class, 'lockedPagesCheck' ];
 			// Disable action=delete
-			$wgHooks['ArticleConfirmDelete'][] = 'PageTranslationHooks::disableDelete';
+			$wgHooks['ArticleConfirmDelete'][] = [ Hooks::class, 'disableDelete' ];
 
 			// Replace subpage logic behavior
-			$wgHooks['SkinSubPageSubtitle'][] = 'PageTranslationHooks::replaceSubtitle';
+			$wgHooks['SkinSubPageSubtitle'][] = [ Hooks::class, 'replaceSubtitle' ];
 
 			// Replaced edit tab with translation tab for translation pages
-			$wgHooks['SkinTemplateNavigation'][] = 'PageTranslationHooks::translateTab';
+			$wgHooks['SkinTemplateNavigation::Universal'][] = [ Hooks::class, 'translateTab' ];
 
 			// Update translated page when translation unit is moved
-			if ( interface_exists( PageMoveCompleteHook::class ) ) {
-				$wgHooks['PageMoveComplete'][] = 'PageTranslationHooks::onMovePageTranslationUnits';
-			} else {
-				$wgHooks['TitleMoveComplete'][] = 'PageTranslationHooks::onMoveTranslationUnits';
-			}
+			$wgHooks['PageMoveComplete'][] = [ Hooks::class, 'onMovePageTranslationUnits' ];
 
 			// Update translated page when translation unit is deleted
-			$wgHooks['ArticleDeleteComplete'][] = 'PageTranslationHooks::onDeleteTranslationUnit';
+			$wgHooks['ArticleDeleteComplete'][] = [ Hooks::class, 'onDeleteTranslationUnit' ];
 		}
 
 		global $wgTranslateUseSandbox;
@@ -208,9 +261,10 @@ class TranslateHooks {
 				'class' => ManageTranslatorSandboxSpecialPage::class,
 				'services' => [
 					'Translate:TranslationStashReader',
+					'UserOptionsLookup'
 				],
 				'args' => [
-					function () {
+					static function () {
 						return new ServiceOptions(
 							ManageTranslatorSandboxSpecialPage::CONSTRUCTOR_OPTIONS,
 							MediaWikiServices::getInstance()->getMainConfig()
@@ -222,10 +276,11 @@ class TranslateHooks {
 				'class' => TranslationStashSpecialPage::class,
 				'services' => [
 					'LanguageNameUtils',
-					'Translate:TranslationStashReader'
+					'Translate:TranslationStashReader',
+					'UserOptionsLookup'
 				],
 				'args' => [
-					function () {
+					static function () {
 						return new ServiceOptions(
 							TranslationStashSpecialPage::CONSTRUCTOR_OPTIONS,
 							MediaWikiServices::getInstance()->getMainConfig()
@@ -256,8 +311,31 @@ class TranslateHooks {
 			$wgJobClasses['TranslateSandboxEmailJob'] = 'TranslateSandboxEmailJob';
 
 			global $wgAPIModules;
-			$wgAPIModules['translationstash'] = 'ApiTranslationStash';
-			$wgAPIModules['translatesandbox'] = 'ApiTranslateSandbox';
+			$wgAPIModules['translationstash'] = [
+				'class' => TranslationStashActionApi::class,
+				'services' => [
+					'DBLoadBalancer',
+					'UserFactory'
+				]
+			];
+			$wgAPIModules['translatesandbox'] = [
+				'class' => TranslatorSandboxActionApi::class,
+				'services' => [
+						'UserFactory',
+						'UserNameUtils',
+						'UserOptionsManager',
+						'WikiPageFactory',
+						'UserOptionsLookup'
+				],
+				'args' => [
+					static function () {
+						return new ServiceOptions(
+							TranslatorSandboxActionApi::CONSTRUCTOR_OPTIONS,
+							MediaWikiServices::getInstance()->getMainConfig()
+						);
+					}
+				]
+			];
 		}
 
 		global $wgNamespaceRobotPolicies;
@@ -278,12 +356,7 @@ class TranslateHooks {
 			}
 		}
 
-		// Add the BaseTemplateToolbox handler only when the new hook hasn't been defined yet.
-		if ( interface_exists( SidebarBeforeOutputHook::class ) ) {
-			$wgHooks['SidebarBeforeOutput'][] = 'TranslateToolbox::toolboxAllTranslations';
-		} else {
-			$wgHooks['BaseTemplateToolbox'][] = 'TranslateToolbox::toolboxAllTranslationsOld';
-		}
+		$wgHooks['SidebarBeforeOutput'][] = 'TranslateToolbox::toolboxAllTranslations';
 	}
 
 	/**
@@ -300,7 +373,7 @@ class TranslateHooks {
 	/**
 	 * Used for setting an AbuseFilter variable.
 	 *
-	 * @param AbuseFilterVariableHolder &$vars
+	 * @param VariableHolder &$vars
 	 * @param Title $title
 	 * @param User $user
 	 */
@@ -328,7 +401,7 @@ class TranslateHooks {
 	/**
 	 * Computes the translate_source_text and translate_target_language AbuseFilter variables
 	 * @param string $method
-	 * @param AbuseFilterVariableHolder $vars
+	 * @param VariableHolder $vars
 	 * @param array $parameters
 	 * @param null &$result
 	 * @return bool
@@ -373,7 +446,7 @@ class TranslateHooks {
 	 */
 	public static function setupParserHooks( Parser $parser ) {
 		// For nice language list in-page
-		$parser->setHook( 'languages', [ 'PageTranslationHooks', 'languages' ] );
+		$parser->setHook( 'languages', [ Hooks::class, 'languages' ] );
 	}
 
 	/**
@@ -383,112 +456,96 @@ class TranslateHooks {
 	 */
 	public static function schemaUpdates( DatabaseUpdater $updater ) {
 		$dir = __DIR__ . '/sql';
+		$dbType = $updater->getDB()->getType();
 
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_sections',
-			"$dir/translate_sections.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addField',
-			'translate_sections',
-			'trs_order',
-			"$dir/translate_sections-trs_order.patch.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'revtag', "$dir/revtag.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_groupstats',
-			"$dir/translate_groupstats.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addIndex',
-			'translate_sections',
-			'trs_page_order',
-			"$dir/translate_sections-indexchange.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'dropIndex',
-			'translate_sections',
-			'trs_page',
-			"$dir/translate_sections-indexchange2.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_reviews',
-			"$dir/translate_reviews.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_groupreviews',
-			"$dir/translate_groupreviews.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_tms',
-			"$dir/translate_tm.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_metadata',
-			"$dir/translate_metadata.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addTable', 'translate_messageindex',
-			"$dir/translate_messageindex.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addIndex',
-			'translate_groupstats',
-			'tgs_lang',
-			"$dir/translate_groupstats-indexchange.sql",
-			true
-		] );
-		$updater->addExtensionUpdate( [
-			'addField', 'translate_groupstats',
-			'tgs_proofread',
-			"$dir/translate_groupstats-proofread.sql",
-			true
-		] );
+		if ( $dbType === 'mysql' || $dbType === 'sqlite' ) {
+			$updater->addExtensionTable(
+				'translate_sections',
+				"{$dir}/{$dbType}/translate_sections.sql"
+			);
+			$updater->addExtensionTable(
+				'revtag',
+				"{$dir}/{$dbType}/revtag.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_groupstats',
+				"{$dir}/{$dbType}/translate_groupstats.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_reviews',
+				"{$dir}/{$dbType}/translate_reviews.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_groupreviews',
+				"{$dir}/{$dbType}/translate_groupreviews.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_tms',
+				"{$dir}/{$dbType}/translate_tm.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_metadata',
+				"{$dir}/{$dbType}/translate_metadata.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_messageindex',
+				"{$dir}/{$dbType}/translate_messageindex.sql"
+			);
+			$updater->addExtensionTable(
+				'translate_stash',
+				"{$dir}/{$dbType}/translate_stash.sql"
+			);
 
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_stash',
-			"$dir/translate_stash.sql",
-			true
-		] );
+			// 1.32 - This also adds a PRIMARY KEY
+			$updater->addExtensionUpdate( [
+				'renameIndex',
+				'translate_reviews',
+				'trr_user_page_revision',
+				'PRIMARY',
+				false,
+				"$dir/translate_reviews-patch-01-primary-key.sql",
+				true
+			] );
 
-		// This also adds a PRIMARY KEY
-		$updater->addExtensionUpdate( [
-			'renameIndex',
-			'translate_reviews',
-			'trr_user_page_revision',
-			'PRIMARY',
-			false,
-			"$dir/translate_reviews-patch-01-primary-key.sql",
-			true
-		] );
+			$updater->addExtensionTable(
+				'translate_cache',
+				"{$dir}/{$dbType}/translate_cache.sql"
+			);
 
-		$updater->addExtensionUpdate( [
-			'addTable',
-			'translate_cache',
-			"$dir/translate_cache.sql",
-			true
-		] );
+			if ( $dbType === 'mysql' ) {
+				// 1.38
+				$updater->modifyExtensionField(
+					'translate_cache',
+					'tc_key',
+					"{$dir}/{$dbType}/translate_cache-alter-varbinary.sql"
+				);
+			}
+		} elseif ( $dbType === 'postgres' ) {
+			$updater->addExtensionTable(
+				'translate_sections',
+				"{$dir}/{$dbType}/tables-generated.sql"
+			);
+			$updater->addExtensionUpdate( [
+				'changeField', 'translate_cache', 'tc_exptime', 'TIMESTAMPTZ', 'th_timestamp::timestamp with time zone'
+			] );
+		}
+
+		// 1.39
+		$updater->dropExtensionIndex(
+			'translate_messageindex',
+			'tmi_key',
+			"{$dir}/{$dbType}/patch-translate_messageindex-unique-to-pk.sql"
+		);
+		$updater->dropExtensionIndex(
+			'translate_tmt',
+			'tms_sid_lang',
+			"{$dir}/{$dbType}/patch-translate_tmt-unique-to-pk.sql"
+		);
+		$updater->dropExtensionIndex(
+			'revtag',
+			'rt_type_page_revision',
+			"{$dir}/{$dbType}/patch-revtag-unique-to-pk.sql"
+		);
 	}
 
 	/**
@@ -604,10 +661,10 @@ class TranslateHooks {
 		if ( TTMServer::primary() instanceof SearchableTTMServer ) {
 			$href = SpecialPage::getTitleFor( 'SearchTranslations' )
 				->getFullUrl( [ 'query' => $term ] );
-			$wrapper = new RawMessage( '<div class="successbox plainlinks">$1</div>' );
-			$form = $wrapper
-				->params( $search->msg( 'translate-searchprofile-note', $href )->plain() )
-				->parse();
+			$form = Html::successBox(
+				$search->msg( 'translate-searchprofile-note', $href )->parse(),
+				'plainlinks'
+			);
 
 			return false;
 		}
@@ -674,44 +731,33 @@ class TranslateHooks {
 	}
 
 	/**
-	 * Hook: Translate:MessageGroupStats:isIncluded
-	 * @param int $id
-	 * @param string $code
-	 * @return bool
+	 * Hook: ParserAfterTidy
+	 * @param Parser $parser
+	 * @param string &$html
 	 */
-	public static function hideDiscouragedFromStats( $id, $code ) {
-		// Return true to keep, false to exclude
-		return MessageGroups::getPriority( $id ) !== 'discouraged';
-	}
-
-	/**
-	 * Hook: Translate:MessageGroupStats:isIncluded
-	 * @param int $id
-	 * @param string $code
-	 * @return false
-	 */
-	public static function hideRestrictedFromStats( $id, $code ) {
-		$filterLangs = TranslateMetadata::get( $id, 'prioritylangs' );
-		$hasPriorityForce = TranslateMetadata::get( $id, 'priorityforce' ) === 'on';
-		if ( strlen( $filterLangs ) === 0 || !$hasPriorityForce ) {
-			// No restrictions, keep everything
-			return true;
-		}
-
-		$filter = array_flip( explode( ',', $filterLangs ) );
-
-		// If the language is in the list, return true to not hide it
-		return isset( $filter[$code] );
-	}
-
-	/**
-	 * Hook: LinksUpdate
-	 * @param LinksUpdate $updater
-	 */
-	public static function preventCategorization( LinksUpdate $updater ) {
-		$handle = new MessageHandle( $updater->getTitle() );
+	public static function preventCategorization( Parser $parser, &$html ) {
+		$handle = new MessageHandle( $parser->getTitle() );
 		if ( $handle->isMessageNamespace() && !$handle->isDoc() ) {
-			$updater->mCategories = [];
+			$parserOutput = $parser->getOutput();
+			$parserOutput->setExtensionData( 'translate-fake-categories',
+				$parserOutput->getCategories() );
+			if ( method_exists( $parserOutput, 'setCategories' ) ) { // 1.38+
+				$parserOutput->setCategories( [] );
+			} else {
+				$parserOutput->setCategoryLinks( [] );
+			}
+		}
+	}
+
+	/**
+	 * Hook: OutputPageParserOutput
+	 * @param OutputPage $outputPage
+	 * @param ParserOutput $parserOutput
+	 */
+	public static function showFakeCategories( OutputPage $outputPage, ParserOutput $parserOutput ) {
+		$fakeCategories = $parserOutput->getExtensionData( 'translate-fake-categories' );
+		if ( $fakeCategories ) {
+			$outputPage->setCategoryLinks( $fakeCategories );
 		}
 	}
 
@@ -768,7 +814,7 @@ class TranslateHooks {
 	 * @param User $newUser
 	 */
 	public static function onMergeAccountFromTo( User $oldUser, User $newUser ) {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 
 		// Update the non-duplicate rows, we'll just delete
 		// the duplicate ones later
@@ -792,7 +838,7 @@ class TranslateHooks {
 	 * @param User $oldUser
 	 */
 	public static function onDeleteAccount( User $oldUser ) {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 
 		// Delete any remaining rows that didn't get merged
 		foreach ( self::$userMergeTables as $table => $field ) {
@@ -882,231 +928,6 @@ class TranslateHooks {
 		return '';
 	}
 
-	/** @param ResourceLoader $resourceLoader */
-	public static function onResourceLoaderRegisterModules( ResourceLoader $resourceLoader ) {
-		// Support: MediaWiki <= 1.34
-		$hasOldTokens = $hasOldNotify = version_compare(
-			TranslateUtils::getMWVersion(), '1.35', '<'
-		);
-
-		$tpl = [
-			'localBasePath' => __DIR__,
-			'remoteExtPath' => 'Translate',
-			'targets' => [ 'desktop', 'mobile' ],
-		];
-
-		$modules = [
-			'ext.translate.recentgroups' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.recentgroups.js',
-				'dependencies' => [
-					'mediawiki.storage'
-				],
-			],
-			'ext.translate.groupselector' => $tpl + [
-				'styles' => 'resources/css/ext.translate.groupselector.less',
-				'scripts' => 'resources/js/ext.translate.groupselector.js',
-				'dependencies' => [
-					'ext.translate.base',
-					'ext.translate.loader',
-					'ext.translate.statsbar',
-					'jquery.ui',
-					'mediawiki.jqueryMsg'
-				],
-				'messages' => [
-					'translate-msggroupselector-search-all',
-					'translate-msggroupselector-search-placeholder',
-					'translate-msggroupselector-search-recent',
-					'translate-msggroupselector-view-subprojects'
-				]
-			],
-			'ext.translate.special.aggregategroups' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.special.aggregategroups.js',
-				'dependencies' => [
-					'jquery.ui',
-					'mediawiki.api',
-					'mediawiki.util'
-				],
-				'messages' => [
-					'tpt-aggregategroup-add',
-					'tpt-aggregategroup-edit-description',
-					'tpt-aggregategroup-edit-name',
-					'tpt-aggregategroup-remove-confirm',
-					'tpt-aggregategroup-update',
-					'tpt-aggregategroup-update-cancel',
-					'tpt-invalid-group'
-				]
-			],
-			'ext.translate.special.importtranslations' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.special.importtranslations.js',
-				'dependencies' => [
-					'jquery.ui',
-				]
-			],
-			'ext.translate.special.managetranslatorsandbox' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.special.managetranslatorsandbox.js',
-				'dependencies' => array_merge( [
-					'ext.translate.loader',
-					'ext.translate.translationstashstorage',
-					'ext.uls.mediawiki',
-					'jquery.ui',
-					'mediawiki.api',
-					'mediawiki.jqueryMsg',
-					'mediawiki.language',
-				], $hasOldNotify ? [ 'mediawiki.notify' ] : [] ),
-				'messages' => [
-					'tsb-accept-all-button-label',
-					'tsb-accept-button-label',
-					'tsb-reject-confirmation',
-					'tsb-accept-confirmation',
-					'tsb-all-languages-button-label',
-					'tsb-didnt-make-any-translations',
-					'tsb-no-requests-from-new-users',
-					'tsb-older-requests',
-					'tsb-reject-all-button-label',
-					'tsb-reject-button-label',
-					'tsb-reminder-failed',
-					'tsb-reminder-link-text',
-					'tsb-reminder-sending',
-					'tsb-reminder-sent',
-					'tsb-reminder-sent-new',
-					'tsb-request-count',
-					'tsb-selected-count',
-					'tsb-translations-current',
-					'tsb-translations-source',
-					'tsb-translations-user',
-					'tsb-user-posted-a-comment'
-				]
-			],
-			'ext.translate.special.searchtranslations.operatorsuggest' => $tpl + [
-				'scripts' => 'resources/js/ext.translate.special.operatorsuggest.js',
-				'dependencies' => [
-					'jquery.ui',
-				]
-			],
-			'ext.translate.special.pagetranslation' => $tpl + [
-				'packageFiles' => [
-					'resources/js/ext.translate.special.pagetranslation.js',
-					'resources/js/LanguagesMultiselectWidget.js'
-				],
-				'dependencies' => [
-					'mediawiki.Uri',
-					'mediawiki.api',
-					'mediawiki.ui.button',
-					'mediawiki.widgets',
-					'oojs-ui-widgets',
-					$hasOldTokens ? 'user.tokens' : 'user.options',
-				],
-				'targets' => [
-					'desktop'
-				]
-			],
-			"ext.translate.editor" => $tpl + [
-				"scripts" => [
-					"resources/js/ext.translate.storage.js",
-					"resources/lib/jquery.autosize.js",
-					"resources/js/ext.translate.editor.helpers.js",
-					"resources/js/ext.translate.editor.js",
-					"resources/js/ext.translate.editor.shortcuts.js",
-					"resources/js/ext.translate.pagemode.js",
-					"resources/js/ext.translate.proofread.js"
-				],
-				"styles" => [
-					"resources/css/ext.translate.editor.css",
-					"resources/css/ext.translate.pagemode.css",
-					"resources/css/ext.translate.proofread.css"
-				],
-				"dependencies" => array_merge( [
-					"ext.translate.base",
-					"ext.translate.dropdownmenu",
-					"jquery.makeCollapsible",
-					"jquery.textSelection",
-					"jquery.textchange",
-					"mediawiki.Uri",
-					"mediawiki.api",
-					"mediawiki.jqueryMsg",
-					"mediawiki.language",
-					"mediawiki.user",
-					"mediawiki.util"
-				], $hasOldNotify ? [ 'mediawiki.notify' ] : [] ),
-				"messages" => [
-					"translate-edit-askpermission",
-					"translate-edit-nopermission",
-					"tux-editor-add-desc",
-					"tux-editor-ask-help",
-					"tux-editor-cancel-button-label",
-					"tux-editor-close-tooltip",
-					"tux-editor-collapse-tooltip",
-					"tux-editor-confirm-button-label",
-					"tux-editor-discard-changes-button-label",
-					"tux-editor-doc-editor-cancel",
-					"tux-editor-doc-editor-placeholder",
-					"tux-editor-doc-editor-save",
-					"tux-editor-edit-desc",
-					"tux-editor-expand-tooltip",
-					"tux-editor-in-other-languages",
-					"tux-editor-loading",
-					"tux-editor-loading-failed",
-					"tux-editor-message-desc-less",
-					"tux-editor-message-desc-more",
-					"tux-editor-message-tools-show-editor",
-					"tux-editor-message-tools-delete",
-					"tux-editor-message-tools-history",
-					"tux-editor-message-tools-translations",
-					"tux-editor-message-tools-linktothis",
-					"tux-editor-n-uses",
-					"tux-editor-need-more-help",
-					"tux-editor-outdated-notice",
-					"tux-editor-outdated-notice-diff-link",
-					"tux-editor-paste-original-button-label",
-					"tux-editor-placeholder",
-					"tux-editor-editsummary-placeholder",
-					"tux-editor-proofread-button-label",
-					"tux-editor-save-button-label",
-					"tux-editor-save-failed",
-					"tux-editor-shortcut-info",
-					"tux-editor-skip-button-label",
-					"tux-editor-suggestions-title",
-					"tux-editor-tm-match",
-					"tux-proofread-action-tooltip",
-					"tux-proofread-edit-label",
-					"tux-proofread-translated-by-self",
-					"tux-session-expired",
-					"tux-status-saving",
-					"tux-status-translated",
-					"tux-status-unsaved",
-					"tux-save-unknown-error",
-					"tux-notices-hide",
-					"tux-notices-more",
-					"spamprotectiontext"
-				],
-				"targets" => [
-					"desktop",
-					"mobile"
-				]
-			],
-			"ext.translate.special.managegroups" => $tpl + [
-				"dependencies" => array_merge( [
-					"ext.translate.messagerenamedialog"
-				], $hasOldNotify ? [ 'mediawiki.notify' ] : [] ),
-				"messages" => [
-					"translate-smg-rename-new",
-					"translate-smg-rename-rename",
-					"translate-smg-rename-dialog-title",
-					"percent"
-				],
-				"scripts" => [
-					"resources/js/ext.translate.special.managegroups.js"
-				],
-				"targets" => [
-					"desktop",
-					"mobile"
-				]
-			],
-		];
-
-		$resourceLoader->register( $modules );
-	}
-
 	/**
 	 * Runs the configured validator to ensure that the message meets the required criteria.
 	 * Hook: EditFilterMergedContent
@@ -1114,7 +935,7 @@ class TranslateHooks {
 	 * @param Content $content
 	 * @param Status $status
 	 * @param string $summary
-	 * @param \User $user
+	 * @param User $user
 	 * @return bool true if message is valid, false otherwise.
 	 */
 	public static function validateMessage( IContextSource $context, Content $content,
@@ -1159,8 +980,7 @@ class TranslateHooks {
 
 			$validationResponse = $messageValidator->validateMessage( $message, $handle->getCode() );
 			if ( $validationResponse->hasErrors() ) {
-				// @phan-suppress-next-line SecurityCheck-DoubleEscaped
-				$status->fatal( new \ApiRawMessage(
+				$status->fatal( new ApiRawMessage(
 					$context->msg( 'translate-syntax-error' )->parse(),
 					'translate-validation-failed',
 					[
@@ -1175,5 +995,42 @@ class TranslateHooks {
 		}
 
 		return true;
+	}
+
+	/** @inheritDoc */
+	public function onRevisionRecordInserted( $revisionRecord ): void {
+		$parentId = $revisionRecord->getParentId();
+		if ( $parentId === 0 || $parentId === null ) {
+			// No parent, bail out.
+			return;
+		}
+
+		$prevRev = $this->revisionLookup->getRevisionById( $parentId );
+		if ( !$prevRev || !$revisionRecord->hasSameContent( $prevRev ) ) {
+			// Not a null revision, bail out.
+			return;
+		}
+
+		// List of tags that should be copied over when updating
+		// tp:tag and tp:mark handling is in Hooks::updateTranstagOnNullRevisions.
+		$tagsToCopy = [ RevTagStore::FUZZY_TAG, RevTagStore::TRANSVER_PROP ];
+
+		$db = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
+		$db->insertSelect(
+			'revtag',
+			'revtag',
+			[
+				'rt_type' => 'rt_type',
+				'rt_page' => 'rt_page',
+				'rt_revision' => $revisionRecord->getId(),
+				'rt_value' => 'rt_value',
+
+			],
+			[
+				'rt_type' => $tagsToCopy,
+				'rt_revision' => $parentId,
+			],
+			__METHOD__
+		);
 	}
 }

@@ -56,32 +56,23 @@
 		 * Prepare the selector menu rendering
 		 */
 		prepareSelectorMenu: function () {
-			var $listFilters,
-				$listFiltersGroup,
-				$search,
-				$searchIcon,
-				$searchGroup;
-
 			this.$menu = $( '<div>' )
 				.addClass( 'tux-groupselector' )
 				.addClass( 'grid hide' );
 
-			$searchIcon = $( '<div>' )
+			var $searchIcon = $( '<div>' )
 				.addClass( 'two columns tux-groupselector__filter__search__icon' );
 
 			this.$search = $( '<input>' )
 				.prop( 'type', 'text' )
-				.addClass( 'tux-groupselector__filter__search__input' );
+				.addClass( 'tux-groupselector__filter__search__input' )
+				.prop( 'placeholder', mw.msg( 'translate-msggroupselector-search-placeholder' ) );
 
-			if ( mw.translate.isPlaceholderSupported( this.$search ) ) {
-				this.$search.prop( 'placeholder', mw.msg( 'translate-msggroupselector-search-placeholder' ) );
-			}
-
-			$search = $( '<div>' )
+			var $search = $( '<div>' )
 				.addClass( 'ten columns' )
 				.append( this.$search );
 
-			$listFilters = $( '<div>' )
+			var $listFilters = $( '<div>' )
 				.addClass( 'tux-groupselector__filter__tabs' )
 				.addClass( 'six columns' )
 				.append(
@@ -98,12 +89,12 @@
 				);
 			}
 
-			$searchGroup = $( '<div>' )
+			var $searchGroup = $( '<div>' )
 				.addClass( 'tux-groupselector__filter__search' )
 				.addClass( 'six columns' )
 				.append( $searchIcon, $search );
 
-			$listFiltersGroup = $( '<div>' )
+			var $listFiltersGroup = $( '<div>' )
 				.addClass( 'tux-groupselector__filter' )
 				.addClass( 'row' )
 				.append( $listFilters, $searchGroup );
@@ -165,8 +156,7 @@
 		 * Attach event listeners
 		 */
 		listen: function () {
-			var $tabs,
-				groupSelector = this;
+			var groupSelector = this;
 
 			// Hide the selector panel when clicking outside of it
 			$( document.documentElement ).on( 'click', this.hide.bind( this ) );
@@ -183,15 +173,14 @@
 			// Handle click on row item. This selects the group, and in case it has
 			// subgroups, also opens a new menu to show them.
 			groupSelector.$menu.on( 'click', '.tux-grouplist__item', function () {
-				var $newLink,
-					messageGroup = $( this ).data( 'msggroup' );
+				var messageGroup = $( this ).data( 'msggroup' );
 
 				groupSelector.hide();
 
 				groupSelector.$trigger.nextAll().remove();
 
 				if ( !groupSelector.options.preventSelector ) {
-					$newLink = $( '<span>' )
+					var $newLink = $( '<span>' )
 						.addClass( 'grouptitle grouplink' )
 						.text( messageGroup.label )
 						.data( 'msggroupid', messageGroup.id );
@@ -216,7 +205,7 @@
 			} );
 
 			// Handle the tabs All | Recent
-			$tabs = groupSelector.$menu.find( '.tux-grouptab' );
+			var $tabs = groupSelector.$menu.find( '.tux-grouptab' );
 			$tabs.on( 'click', function () {
 				var $this = $( this );
 
@@ -361,15 +350,14 @@
 		 * @param {Object} foundIDs The array in which the keys are IDs of message groups that were found already.
 		 */
 		flattenGroupList: function ( messageGroups, foundIDs ) {
-			var i, messageGroupList;
-
+			var messageGroupList;
 			if ( messageGroups.groups ) {
 				messageGroupList = messageGroups.groups;
 			} else {
 				messageGroupList = messageGroups;
 			}
 
-			for ( i = 0; i < messageGroupList.length; i++ ) {
+			for ( var i = 0; i < messageGroupList.length; i++ ) {
 				// Avoid duplicate groups, and add the parent before subgroups
 				if ( !foundIDs[ messageGroupList[ i ].id ] ) {
 					this.flatGroupList.push( messageGroupList[ i ] );
@@ -393,11 +381,11 @@
 			var self = this;
 
 			this.loadGroups().done( function ( groups ) {
-				var currentGroup, index, matcher, foundGroups = [];
+				var foundGroups = [];
 
 				if ( !self.flatGroupList ) {
 					self.flatGroupList = [];
-					currentGroup = mw.translate.findGroup( self.parentGroupId, groups );
+					var currentGroup = mw.translate.findGroup( self.parentGroupId, groups );
 					if ( self.parentGroupId ) {
 						currentGroup = currentGroup.groups;
 					}
@@ -406,9 +394,9 @@
 
 				// Optimization, assuming that people search the beginning
 				// of the group name.
-				matcher = new RegExp( '\\b' + escapeRegex( query ), 'i' );
+				var matcher = new RegExp( '\\b' + escapeRegex( query ), 'i' );
 
-				for ( index = 0; index < self.flatGroupList.length; index++ ) {
+				for ( var index = 0; index < self.flatGroupList.length; index++ ) {
 					if ( matcher.test( self.flatGroupList[ index ].label ) ||
 						query === self.flatGroupList[ index ].id ) {
 						foundGroups.push( self.flatGroupList[ index ] );
@@ -427,18 +415,17 @@
 		 * @return {jQuery.Promise}
 		 */
 		loadGroups: function () {
-			var params;
-
 			if ( groupsLoader !== undefined ) {
 				return groupsLoader;
 			}
 
-			params = {
+			var params = {
 				action: 'query',
 				meta: 'messagegroups',
 				mgformat: 'tree',
-				mgprop: 'id|label|icon|priority|prioritylangs|priorityforce',
-				mgiconsize: '32'
+				mgprop: 'id|label|icon',
+				mgiconsize: '32',
+				mglanguageFilter: this.options.language
 			};
 
 			groupsLoader = new mw.Api()
@@ -458,32 +445,18 @@
 		 */
 		addGroupRows: function ( groups ) {
 			var groupSelector = this,
-				$msgGroupRows = [],
-				$parent,
-				targetLanguage = this.options.language;
+				$msgGroupRows = [];
 
 			if ( !groups ) {
 				return;
 			}
 
 			groups.forEach( function ( group ) {
-				/* Hide from the selector:
-				 * - discouraged groups (the only priority value currently supported).
-				 * - groups that are recommended for other languages.
-				 */
-				if ( group.priority === 'discouraged' ||
-					( group.priorityforce &&
-						group.prioritylangs &&
-						group.prioritylangs.indexOf( targetLanguage ) === -1 )
-				) {
-					return;
-				}
-
 				$msgGroupRows.push( groupSelector.prepareMessageGroupRow( group ) );
 			} );
 
 			if ( this.parentGroupId ) {
-				$parent = this.$list.find( '.tux-grouplist__item[data-msggroupid="' +
+				var $parent = this.$list.find( '.tux-grouplist__item[data-msggroupid="' +
 					this.parentGroupId + '"]' );
 
 				if ( $parent.length ) {
@@ -502,28 +475,21 @@
 		 * @return {Object} a jQuery object with the groups selector row (<div>).
 		 */
 		prepareMessageGroupRow: function ( messagegroup ) {
-			var $row,
-				$icon,
-				$label,
-				$statsbar,
-				$subGroupsLabel,
-				style = '';
-
-			$row = $( '<div>' )
+			var $row = $( '<div>' )
 				.addClass( 'row tux-grouplist__item' )
 				.attr( 'data-msggroupid', messagegroup.id )
 				.data( 'msggroup', messagegroup );
 
-			$icon = $( '<div>' )
+			var $icon = $( '<div>' )
 				.addClass( 'tux-grouplist__item__icon' )
 				.addClass( 'one column' );
 
-			$statsbar = $( '<div>' ).languagestatsbar( {
+			var $statsbar = $( '<div>' ).languagestatsbar( {
 				language: this.options.language,
 				group: messagegroup.id
 			} );
 
-			$label = $( '<div>' )
+			var $label = $( '<div>' )
 				.addClass( 'tux-grouplist__item__label' )
 				.addClass( 'seven columns' )
 				.append(
@@ -534,6 +500,7 @@
 					$statsbar
 				);
 
+			var style = '';
 			if ( messagegroup.icon && messagegroup.icon.raster ) {
 				style += 'background-image: url(--);';
 				style = style.replace( /--/g, messagegroup.icon.raster );
@@ -548,7 +515,7 @@
 				$icon.attr( 'style', style );
 			}
 
-			$subGroupsLabel = $( [] );
+			var $subGroupsLabel = $( [] );
 
 			if ( messagegroup.groups && messagegroup.groups.length > 0 ) {
 				$subGroupsLabel = $( '<div>' )
@@ -577,6 +544,17 @@
 			}
 
 			return isSupported;
+		},
+
+		/**
+		 * Only shows message groups translatable to given target language
+		 *
+		 * @param {string} targetLanguage
+		 */
+		updateTargetLanguage: function ( targetLanguage ) {
+			this.options.language = targetLanguage;
+			groupsLoader = undefined;
+			this.firstShow = true;
 		}
 	};
 

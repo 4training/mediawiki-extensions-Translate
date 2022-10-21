@@ -5,7 +5,6 @@ namespace MediaWiki\Extension\Translate\Synchronization;
 use InvalidArgumentException;
 use LogicException;
 use MediaWiki\Extension\Translate\Cache\PersistentDatabaseCache;
-use MediaWiki\Extension\Translate\Services;
 use MediaWiki\MediaWikiServices;
 use MediaWikiIntegrationTestCase;
 
@@ -173,18 +172,7 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 		$this->assertEmpty( $this->groupSyncCache->getGroupsWithErrors() );
 
 		$groupId = 'test-group';
-		$groupHasTimedOut = true;
-		$groupSyncResponse = new GroupSynchronizationResponse(
-			$groupId,
-			[
-				$this->getMessageParam( $groupId, 'title1' ),
-				$this->getMessageParam( $groupId, 'title2' ),
-				$this->getMessageParam( $groupId, 'title3' )
-			],
-			$groupHasTimedOut
-		);
-
-		$this->groupSyncCache->addGroupErrors( $groupSyncResponse );
+		$groupSyncResponse = $this->addTestGroupError( $groupId );
 		$this->assertContains( $groupId, $this->groupSyncCache->getGroupsWithErrors() );
 		$this->assertEquals( $groupSyncResponse, $this->groupSyncCache->getGroupErrorInfo( $groupId ) );
 
@@ -201,6 +189,31 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 		);
 	}
 
+	public function testMarkGroupAsResolved() {
+		$groupId = 'test-group';
+		$this->addTestGroupError( $groupId );
+
+		$this->assertContains( $groupId, $this->groupSyncCache->getGroupsWithErrors() );
+		$this->groupSyncCache->markGroupAsResolved( $groupId );
+		$this->assertNotContains( $groupId, $this->groupSyncCache->getGroupsWithErrors() );
+	}
+
+	public function testMarkMessageAsResolved() {
+		$groupId = 'test-group';
+		$groupSyncResponse = $this->addTestGroupError( $groupId );
+
+		$this->assertContains( $groupId, $this->groupSyncCache->getGroupsWithErrors() );
+
+		$errorMessages = $groupSyncResponse->getRemainingMessages();
+		$pageName = $errorMessages[0]->getPageName();
+		$this->groupSyncCache->markMessageAsResolved( $groupId, $pageName );
+
+		$fixedGroupSyncResponse = $this->groupSyncCache->syncGroupErrors( $groupId );
+		$fixedErrorMessages = $fixedGroupSyncResponse->getRemainingMessages();
+
+		$this->assertCount( count( $errorMessages ) - 1, $fixedErrorMessages );
+	}
+
 	public function testAddGroupErrorsEmpty() {
 		$groupId = 'test-group';
 		$groupHasTimedOut = true;
@@ -208,6 +221,59 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 
 		$this->expectException( LogicException::class );
 		$this->groupSyncCache->addGroupErrors( $groupSyncResponse );
+	}
+
+	public function testGroupHasErrors() {
+		$groupId = 'test-group';
+		$this->addTestGroupError( $groupId );
+		$this->assertTrue( $this->groupSyncCache->groupHasErrors( $groupId ) );
+
+		$this->groupSyncCache->markGroupAsResolved( $groupId );
+		$this->assertFalse( $this->groupSyncCache->groupHasErrors( $groupId ) );
+	}
+
+	public function testGroupInReview() {
+		$groupId = 'test-group';
+		$this->groupSyncCache->markGroupAsInReview( $groupId );
+		$this->assertTrue( $this->groupSyncCache->isGroupInReview( $groupId ) );
+
+		$this->groupSyncCache->markGroupAsInReview( $groupId );
+		$this->assertTrue( $this->groupSyncCache->isGroupInReview( $groupId ) );
+	}
+
+	/** @dataProvider provideExtendGroupExpiryTime */
+	public function testExtendGroupExpiryTime( int $initialExpiryTime, string $expectedCondition ) {
+		$groupId = 'test-group-id';
+		$this->groupSyncCache = $this->getGroupSynchronizationCache( $initialExpiryTime );
+
+		$this->startGroupSync( $groupId, 'hello' );
+
+		$initialExpiryTime = $this->groupSyncCache->getGroupExpiryTime( $groupId );
+
+		$this->groupSyncCache->extendGroupExpiryTime( $groupId );
+
+		$extendedExpiryTime = $this->groupSyncCache->getGroupExpiryTime( $groupId );
+
+		$this->$expectedCondition( $initialExpiryTime, $extendedExpiryTime );
+	}
+
+	public function testExtendInvalidGroupExpiryTime() {
+		$this->expectException( LogicException::class );
+		$this->expectExceptionMessageMatches( '/group that is not being processed/i' );
+
+		$this->groupSyncCache->extendGroupExpiryTime( 'testGroupId' );
+	}
+
+	public function testExtendTimedOutGroupExpiryTime() {
+		$groupSyncCache = $this->getGroupSynchronizationCache( -1 );
+		$this->groupSyncCache = $groupSyncCache;
+
+		$this->expectException( LogicException::class );
+		$this->expectExceptionMessageMatches( '/group that has already expired/i' );
+
+		$groupId = 'test-group-id';
+		$this->startGroupSync( $groupId, 'hello' );
+		$this->groupSyncCache->extendGroupExpiryTime( $groupId );
 	}
 
 	public function provideGetSynchronizationStatus() {
@@ -246,6 +312,18 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 		];
 	}
 
+	public function provideExtendGroupExpiryTime() {
+		yield 'group expiry time is extended when it is about to expire' => [
+			10,
+			'assertGreaterThan'
+		];
+
+		yield 'group expiry time is not extended when it is not going to expire' => [
+			5000,
+			'assertEquals'
+		];
+	}
+
 	private function getMessageParam( string $groupId, string $title ): MessageUpdateParameter {
 		return new MessageUpdateParameter( [
 			'fuzzy' => true,
@@ -256,8 +334,9 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 	}
 
 	private function getGroupSynchronizationCache( int $timeout = null ): GroupSynchronizationCache {
-		$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
-		$jsonCodec = Services::getInstance()->getJsonCodec();
+		$mwServices = MediaWikiServices::getInstance();
+		$lb = $mwServices->getDBLoadBalancer();
+		$jsonCodec = $mwServices->getJsonCodec();
 		$persistentCache = new PersistentDatabaseCache( $lb, $jsonCodec );
 		$persistentCache->clear();
 
@@ -271,5 +350,21 @@ class GroupSynchronizationCacheTest extends MediaWikiIntegrationTestCase {
 	private function startGroupSync( string $groupId, string $title ): void {
 		$this->groupSyncCache->markGroupForSync( $groupId );
 		$this->groupSyncCache->addMessages( $groupId, $this->getMessageParam( $groupId, $title ) );
+	}
+
+	private function addTestGroupError( string $groupId ): GroupSynchronizationResponse {
+		$groupHasTimedOut = true;
+		$groupSyncResponse = new GroupSynchronizationResponse(
+			$groupId,
+			[
+				$this->getMessageParam( $groupId, 'title1' ),
+				$this->getMessageParam( $groupId, 'title2' ),
+				$this->getMessageParam( $groupId, 'title3' )
+			],
+			$groupHasTimedOut
+		);
+
+		$this->groupSyncCache->addGroupErrors( $groupSyncResponse );
+		return $groupSyncResponse;
 	}
 }

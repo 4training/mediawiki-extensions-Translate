@@ -23,14 +23,14 @@ class ValidationRunnerTest extends MediaWikiIntegrationTestCase {
 		);
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 
 		MessageIndex::setInstance( new HashMessageIndex() );
 		MessageIndex::singleton()->rebuild();
 
 		// Run with empty ignore list by default
-		$this->setMwGlobals( 'wgTranslateCheckBlacklist', false );
+		$this->setMwGlobals( 'wgTranslateValidationExclusionFile', false );
 		ValidationRunner::reloadIgnorePatterns();
 	}
 
@@ -40,7 +40,10 @@ class ValidationRunnerTest extends MediaWikiIntegrationTestCase {
 			'untranslated' => 'fanny',
 			'testing-key' => 'test this!',
 			'regex-key-test' => 'regex test',
-			'non-matching-key' => 'non matching key'
+			'non-matching-key' => 'non matching key',
+			'key-excluded' => '',
+			'regex-exclude' => '',
+			'wildcard-exclude' => ''
 		];
 
 		$list['test-group'] = new MockWikiValidationMessageGroup( 'test-group', $messages );
@@ -168,7 +171,7 @@ class ValidationRunnerTest extends MediaWikiIntegrationTestCase {
 
 	public function testIgnoreList() {
 		$this->setMwGlobals( [
-			'wgTranslateCheckBlacklist' => __DIR__ . '/../data/check-blacklist.php'
+			'wgTranslateValidationExclusionFile' => __DIR__ . '/../data/validation-exclusion-list.php'
 		] );
 
 		$group = MessageGroups::getGroup( 'test-group' );
@@ -185,32 +188,39 @@ class ValidationRunnerTest extends MediaWikiIntegrationTestCase {
 		$this->assertCount(
 			1,
 			$validationResult->getIssues(),
-			'warnings or errors are filtered as per check-blacklist.'
+			'warnings or errors are filtered as per validation-exclusion-list.'
 		);
 
 		$validationResult = $msgValidator->validateMessage( $collectionFr[ 'translated' ], 'fr' );
 		$this->assertGreaterThan(
 			1,
 			count( $validationResult->getIssues() ),
-			'warnings or errors are filtered as per check-blacklist only for specific language code.'
+			'warnings or errors are filtered as per validation-exclusion-list only for specific language code.'
 		);
 
 		$validationResult = $msgValidator->quickValidate( $collection['translated'], 'en-gb' );
 		$this->assertCount(
 			1,
 			$validationResult->getIssues(),
-			'warnings or errors are filtered as per check-blacklist.'
+			'warnings or errors are filtered as per validation-exclusion-list.'
 		);
 
 		$validationResult = $msgValidator->quickValidate( $collectionFr[ 'translated' ], 'fr' );
 		$this->assertCount(
 			1,
 			$validationResult->getIssues(),
-			'warnings or errors are filtered as per check-blacklist only for specific language code.'
+			'warnings or errors are filtered as per validation-exclusion-list only for specific language code.'
+		);
+
+		$validationResult = $msgValidator->validateMessage( $collectionFr['regex-key-test'], 'fr' );
+		$this->assertCount(
+			0,
+			$validationResult->getIssues(),
+			'warnings or errors are filtered as per validation-exclusion-list for specific message key.'
 		);
 	}
 
-	public function testKeyMatching() {
+	public function testKeyInclusion() {
 		$group = MessageGroups::getGroup( 'test-group' );
 		$collection = $group->initCollection( 'en-gb' );
 		$collection->loadTranslations();
@@ -236,5 +246,34 @@ class ValidationRunnerTest extends MediaWikiIntegrationTestCase {
 			$validationResult->getErrors(),
 			'errors are raised for a matching key matched via a direct match!'
 		);
+	}
+
+	public function testKeyExclusion() {
+		$group = MessageGroups::getGroup( 'test-group' );
+		$collection = $group->initCollection( 'en-gb' );
+		$collection->loadTranslations();
+		$msgValidator = $group->getValidator();
+
+		$validationResult = $msgValidator->validateMessage( $collection['regex-key-test'], 'en-gb' );
+		$this->assertGreaterThan(
+			0,
+			count( $validationResult->getErrors() ),
+			'errors are raised for a matching key matched via regex!'
+		);
+
+		$excludedKeys = [
+			'key-excluded',
+			'regex-exclude',
+			'wildcard-exclude'
+		];
+
+		foreach ( $excludedKeys as $key ) {
+			$validationResult = $msgValidator->validateMessage( $collection[$key], 'en-gb' );
+			$this->assertCount(
+				0,
+				$validationResult->getErrors(),
+				'errors are not raised for an excluded key: ' . $key
+			);
+		}
 	}
 }

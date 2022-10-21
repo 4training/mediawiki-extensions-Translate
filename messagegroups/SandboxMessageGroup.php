@@ -52,7 +52,7 @@ class SandboxMessageGroup extends WikiMessageGroup {
 		$list = [];
 
 		// Ugly
-		$store = new TranslationStashStorage( wfGetDB( DB_MASTER ) );
+		$store = new TranslationStashStorage( wfGetDB( DB_PRIMARY ) );
 		$user = RequestContext::getMain()->getUser();
 		$translations = $store->getTranslations( $user );
 
@@ -91,7 +91,7 @@ class SandboxMessageGroup extends WikiMessageGroup {
 			$title = Title::makeTitle( $ns, "$page/{$this->language}" );
 			$handle = new MessageHandle( $title );
 
-			if ( MessageGroups::isTranslatableMessage( $handle ) ) {
+			if ( MessageGroups::isTranslatableMessage( $handle, $this->language ) ) {
 				// Modified by reference
 				$translation = $this->getMessageContent( $handle );
 				if ( $translation === null ) {

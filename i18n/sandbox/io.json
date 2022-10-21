@@ -4,5 +4,7 @@
 			"Joao Xavier"
 		]
 	},
-	"tsb-didnt-make-any-translations": "Ca uzero tradukis nulo."
+	"tsb-request-count": "$1 {{PLURAL:$1|demando|demandi}}",
+	"tsb-didnt-make-any-translations": "Ca uzero tradukis nulo.",
+	"translationstash": "Bonveno"
 }

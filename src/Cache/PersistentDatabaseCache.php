@@ -5,7 +5,7 @@ namespace MediaWiki\Extension\Translate\Cache;
 
 use ArrayIterator;
 use Iterator;
-use MediaWiki\Extension\Translate\Utilities\Json\JsonCodec;
+use MediaWiki\Json\JsonCodec;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -41,7 +41,7 @@ class PersistentDatabaseCache implements PersistentCache {
 	}
 
 	public function getWithLock( string $keyname ): ?PersistentCacheEntry {
-		$dbr = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbr = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 
 		$conds = [ 'tc_key' => $keyname ];
 
@@ -113,7 +113,7 @@ class PersistentDatabaseCache implements PersistentCache {
 	}
 
 	public function set( PersistentCacheEntry ...$entries ): void {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 
 		foreach ( $entries as $entry ) {
 			$value = $this->jsonCodec->serialize( $entry->value() );
@@ -140,8 +140,18 @@ class PersistentDatabaseCache implements PersistentCache {
 		}
 	}
 
+	public function setExpiry( string $keyname, int $expiryTime ): void {
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
+		$dbw->update(
+			self::TABLE_NAME,
+			[ 'tc_exptime' => $expiryTime ],
+			[ 'tc_key' => $keyname ],
+			__METHOD__
+		);
+	}
+
 	public function delete( string ...$keynames ): void {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 		$dbw->delete(
 			self::TABLE_NAME,
 			[ 'tc_key' => $keynames ],
@@ -150,7 +160,7 @@ class PersistentDatabaseCache implements PersistentCache {
 	}
 
 	public function deleteEntriesWithTag( string $tag ): void {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 		$dbw->delete(
 			self::TABLE_NAME,
 			[ 'tc_tag' => $tag ],
@@ -159,7 +169,7 @@ class PersistentDatabaseCache implements PersistentCache {
 	}
 
 	public function clear(): void {
-		$dbw = $this->loadBalancer->getConnectionRef( DB_MASTER );
+		$dbw = $this->loadBalancer->getConnectionRef( DB_PRIMARY );
 		$dbw->delete(
 			self::TABLE_NAME,
 			'*',
@@ -182,5 +192,3 @@ class PersistentDatabaseCache implements PersistentCache {
 		return $entries;
 	}
 }
-
-class_alias( PersistentDatabaseCache::class, '\MediaWiki\Extensions\Translate\PersistentDatabaseCache' );

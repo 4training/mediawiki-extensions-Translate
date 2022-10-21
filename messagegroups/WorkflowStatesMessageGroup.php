@@ -10,6 +10,7 @@
  */
 
 use MediaWiki\Extension\Translate\SystemUsers\FuzzyBot;
+use MediaWiki\MediaWikiServices;
 
 /** @ingroup MessageGroup */
 class WorkflowStatesMessageGroup extends WikiMessageGroup {
@@ -48,19 +49,18 @@ class WorkflowStatesMessageGroup extends WikiMessageGroup {
 		}
 
 		$defs = TranslateUtils::getContents( array_keys( $keys ), $this->getNamespace() );
+		$wikiPageFactory = MediaWikiServices::getInstance()->getWikiPageFactory();
 		foreach ( $keys as $key => $state ) {
 			if ( !isset( $defs[$key] ) ) {
 				// @todo Use jobqueue
 				$title = Title::makeTitleSafe( $this->getNamespace(), $key );
-				$page = new WikiPage( $title );
+				$page = $wikiPageFactory->newFromTitle( $title );
 				$content = ContentHandler::makeContent( $state, $title );
 
-				$page->doEditContent(
+				$page->doUserEditContent(
 					$content,
-					wfMessage( 'translate-workflow-autocreated-summary', $state )->inContentLanguage()->text(),
-					0, /*flags*/
-					false, /* base revision id */
-					FuzzyBot::getUser()
+					FuzzyBot::getUser(),
+					wfMessage( 'translate-workflow-autocreated-summary', $state )->inContentLanguage()->text()
 				);
 			} else {
 				// Use the wiki translation as definition if available.

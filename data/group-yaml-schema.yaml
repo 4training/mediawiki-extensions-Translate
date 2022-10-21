@@ -34,6 +34,18 @@ root:
         translatorCategory:
           _type: text
           _description: Name of the category for translators of this group
+        support:
+          _type: array
+          _description: Configuration for the ask for more information link
+          _children:
+            url:
+              _type: text
+            page:
+              _type: text
+            params:
+              _type: array
+              _children: []
+              _ignore_extra_keys: true
     MANGLER:
       _type: array
       _children:
@@ -84,7 +96,17 @@ root:
                  _type: text
           keymatch:
             _type: array
+            _description: 'Specify the message keys for which this validation should be run. *DEPRECATED*: Use "include" instead'
+            _children: []
+            _ignore_extra_keys: true
+          include:
+            _type: array
             _description: Specify the message keys for which this validation should be run
+            _children: []
+            _ignore_extra_keys: true
+          exclude:
+            _type: array
+            _description: Specify the message keys for which this validation should not be run
             _children: []
             _ignore_extra_keys: true
     TAGS:
@@ -106,11 +128,11 @@ root:
     LANGUAGES:
       _type: array
       _children:
-        whitelist:
+        include:
           _type: prototype
           _prototype:
             _type: text
-        blacklist:
+        exclude:
           _type: prototype
           _prototype:
             _type: text

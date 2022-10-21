@@ -8,7 +8,11 @@
  * @license GPL-2.0-or-later
  */
 
+use Cdb\Reader;
+use Cdb\Writer;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MediaWikiServices;
 
 /**
  * Creates a database of keys in all groups, so that namespace and key can be
@@ -27,18 +31,25 @@ abstract class MessageIndex {
 	private static $keysCache;
 	/** @var BagOStuff */
 	protected $interimCache;
+	/** @var WANObjectCache */
+	private $statusCache;
+	/** @var JobQueueGroup */
+	private $jobQueueGroup;
 
-	/** @return self */
-	public static function singleton() {
+	public function __construct() {
+		// TODO: Use dependency injection
+		$mwInstance = MediaWikiServices::getInstance();
+		$this->statusCache = $mwInstance->getMainWANObjectCache();
+		$this->jobQueueGroup = $mwInstance->getJobQueueGroup();
+	}
+
+	/**
+	 * @deprecated Since 2020.10 Use Services::getMessageIndex()
+	 * @return self
+	 */
+	public static function singleton(): self {
 		if ( self::$instance === null ) {
-			global $wgTranslateMessageIndex;
-			$params = $wgTranslateMessageIndex;
-			if ( is_string( $params ) ) {
-				$params = (array)$params;
-			}
-			$class = array_shift( $params );
-			// @phan-suppress-next-line PhanTypeExpectedObjectOrClassName
-			self::$instance = new $class( $params );
+			self::$instance = Services::getInstance()->getMessageIndex();
 		}
 
 		return self::$instance;
@@ -58,7 +69,7 @@ abstract class MessageIndex {
 	 * Retrieves a list of groups given MessageHandle belongs to.
 	 * @since 2012-01-04
 	 * @param MessageHandle $handle
-	 * @return array
+	 * @return string[]
 	 */
 	public static function getGroupIds( MessageHandle $handle ): array {
 		global $wgTranslateMessageNamespaces;
@@ -94,9 +105,9 @@ abstract class MessageIndex {
 	/**
 	 * @since 2012-01-04
 	 * @param MessageHandle $handle
-	 * @return MessageGroup|null
+	 * @return ?string
 	 */
-	public static function getPrimaryGroupId( MessageHandle $handle ) {
+	public static function getPrimaryGroupId( MessageHandle $handle ): ?string {
 		$groups = self::getGroupIds( $handle );
 
 		return count( $groups ) ? array_shift( $groups ) : null;
@@ -188,7 +199,7 @@ abstract class MessageIndex {
 
 		self::getCache()->clear();
 
-		$new = $old = [];
+		$new = [];
 		$old = $this->retrieve( 'rebuild' );
 		$postponed = [];
 
@@ -230,18 +241,29 @@ abstract class MessageIndex {
 			if ( $interimCacheValue['timestamp'] <= $timestamp ) {
 				$cache->delete( self::CACHEKEY );
 			} else {
-				// We got timestamp lower than newest front cache. This may be caused due to
+				// Cache has a later timestamp. This may be caused due to
 				// job deduplication. Just in case, spin off a new job to clean up the cache.
 				$job = MessageIndexRebuildJob::newJob();
-				JobQueueGroup::singleton()->push( $job );
+				$this->jobQueueGroup->push( $job );
 			}
 		}
+
+		// Other caches can check this key to know when they need to refresh
+		$this->statusCache->touchCheckKey( $this->getStatusCacheKey() );
 
 		$this->clearMessageGroupStats( $diff );
 
 		$recursion--;
 
 		return $new;
+	}
+
+	/**
+	 * @since 2021.10
+	 * @return string
+	 */
+	public function getStatusCacheKey(): string {
+		return $this->statusCache->makeKey( 'Translate', 'MessageIndex', 'status' );
 	}
 
 	private function getInterimCache(): BagOStuff {
@@ -286,7 +308,7 @@ abstract class MessageIndex {
 	 * $a = [ 'a' => '1', 'b' => '2', 'c' => '3' ];
 	 * $b = [ 'b' => '2', 'c' => [ '3', '2' ], 'd' => '4' ];
 	 *
-	 * self::getArrayDiff( $a, $b ) ) === [
+	 * self::getArrayDiff( $a, $b ) === [
 	 *   'keys' => [
 	 *     'add' => [ 'd' => [ [], [ '4' ] ] ],
 	 *     'del' => [ 'a' => [ [ '1' ], [] ] ],
@@ -302,7 +324,7 @@ abstract class MessageIndex {
 	 */
 	public static function getArrayDiff( array $old, array $new ) {
 		$values = [];
-		$record = function ( $groups ) use ( &$values ) {
+		$record = static function ( $groups ) use ( &$values ) {
 			foreach ( $groups as $group ) {
 				$values[$group] = true;
 			}
@@ -347,7 +369,7 @@ abstract class MessageIndex {
 	 */
 	protected function clearMessageGroupStats( array $diff ) {
 		$job = MessageGroupStatsRebuildJob::newRefreshGroupsJob( $diff['values'] );
-		JobQueueGroup::singleton()->push( $job );
+		$this->jobQueueGroup->push( $job );
 
 		foreach ( $diff['keys'] as $keys ) {
 			foreach ( $keys as $key => $data ) {
@@ -472,7 +494,7 @@ class SerializedMessageIndex extends MessageIndex {
 /**
  * Storage on the database itself.
  *
- * This is likely to be the slowest backend. However it scales okay
+ * This is likely to be the slowest backend. However, it scales okay
  * and provides random access. It also doesn't need any special setup,
  * the database table is added with update.php together with other tables,
  * which is the reason this is the default backend. It also works well
@@ -485,7 +507,7 @@ class DatabaseMessageIndex extends MessageIndex {
 	protected $index;
 
 	protected function lock() {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 
 		// Any transaction should be flushed after getting the lock to avoid
 		// stale pre-lock REPEATABLE-READ snapshot data.
@@ -499,20 +521,16 @@ class DatabaseMessageIndex extends MessageIndex {
 
 	protected function unlock() {
 		$fname = __METHOD__;
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		// Unlock once the rows are actually unlocked to avoid deadlocks
 		if ( !$dbw->trxLevel() ) {
 			$dbw->unlock( 'translate-messageindex', $fname );
 		} elseif ( is_callable( [ $dbw, 'onTransactionResolution' ] ) ) { // 1.28
-			$dbw->onTransactionResolution( function () use ( $dbw, $fname ) {
-				$dbw->unlock( 'translate-messageindex', $fname );
-			}, $fname );
-		} elseif ( is_callable( [ $dbw, 'onTransactionCommitOrIdle' ] ) ) {
-			$dbw->onTransactionCommitOrIdle( function () use ( $dbw, $fname ) {
+			$dbw->onTransactionResolution( static function () use ( $dbw, $fname ) {
 				$dbw->unlock( 'translate-messageindex', $fname );
 			}, $fname );
 		} else {
-			$dbw->onTransactionIdle( function () use ( $dbw, $fname ) {
+			$dbw->onTransactionCommitOrIdle( static function () use ( $dbw, $fname ) {
 				$dbw->unlock( 'translate-messageindex', $fname );
 			}, $fname );
 		}
@@ -529,7 +547,7 @@ class DatabaseMessageIndex extends MessageIndex {
 			return $this->index;
 		}
 
-		$dbr = wfGetDB( $forRebuild ? DB_MASTER : DB_REPLICA );
+		$dbr = wfGetDB( $forRebuild ? DB_PRIMARY : DB_REPLICA );
 		$res = $dbr->select( 'translate_messageindex', '*', [], __METHOD__ );
 		$this->index = [];
 		foreach ( $res as $row ) {
@@ -573,7 +591,7 @@ class DatabaseMessageIndex extends MessageIndex {
 		$index = [ 'tmi_key' ];
 		$deletions = array_keys( $diff['del'] );
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$dbw->startAtomic( __METHOD__ );
 
 		if ( $updates !== [] ) {
@@ -605,7 +623,8 @@ class CachedMessageIndex extends MessageIndex {
 	protected $index;
 
 	protected function __construct() {
-		$this->cache = wfGetCache( CACHE_ANYTHING );
+		parent::__construct();
+		$this->cache = ObjectCache::getInstance( CACHE_ANYTHING );
 	}
 
 	/**
@@ -645,14 +664,14 @@ class CachedMessageIndex extends MessageIndex {
  *
  * Loading the whole index is slower than serialized, but about the same
  * as for database. Suitable for single-server setups where
- * SerializedMessageIndex is too slow for sloading the whole index.
+ * SerializedMessageIndex is too slow for loading the whole index.
  *
  * @since 2012-04-10
  */
 class CDBMessageIndex extends MessageIndex {
 	/** @var array|null */
 	protected $index;
-	/** @var \Cdb\Reader|null */
+	/** @var Reader|null */
 	protected $reader;
 	/** @var string */
 	protected $filename = 'translate_messageindex.cdb';
@@ -711,7 +730,7 @@ class CDBMessageIndex extends MessageIndex {
 		$this->reader = null;
 
 		$file = TranslateUtils::cacheFile( $this->filename );
-		$cache = \Cdb\Writer::open( $file );
+		$cache = Writer::open( $file );
 
 		foreach ( $array as $key => $value ) {
 			$value = $this->serialize( $value );
@@ -735,7 +754,7 @@ class CDBMessageIndex extends MessageIndex {
 			$this->index = $this->rebuild();
 		}
 
-		$this->reader = \Cdb\Reader::open( $file );
+		$this->reader = Reader::open( $file );
 		return $this->reader;
 	}
 }

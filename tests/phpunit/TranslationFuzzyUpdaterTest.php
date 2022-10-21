@@ -6,6 +6,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
+use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\RevisionRecord;
 
 /**
@@ -24,7 +26,7 @@ class TranslationFuzzyUpdaterTest extends MediaWikiIntegrationTestCase {
 		$this->setTemporaryHook( 'TranslatePostInitGroups', [ $this, 'getTestGroups' ] );
 
 		$mg = MessageGroups::singleton();
-		$mg->setCache( new WANObjectCache( [ 'cache' => wfGetCache( 'hash' ) ] ) );
+		$mg->setCache( new WANObjectCache( [ 'cache' => new HashBagOStuff() ] ) );
 		$mg->recache();
 
 		MessageIndex::setInstance( new HashMessageIndex() );
@@ -43,19 +45,20 @@ class TranslationFuzzyUpdaterTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testParsing() {
+		$user = $this->getTestUser()->getUser();
 		$title = Title::newFromText( 'MediaWiki:Ugakey/nl' );
-		$page = WikiPage::factory( $title );
+		$page = $this->getServiceContainer()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( '$1 van $2', $title );
-		$status = $page->doEditContent( $content, __METHOD__ );
+		$status = $page->doUserEditContent( $content, $user, __METHOD__ );
 		$value = $status->getValue();
 		/** @var RevisionRecord $revisionRecord */
 		$revisionRecord = $value['revision-record'];
 		$revisionId = $revisionRecord->getId();
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = wfGetDB( DB_PRIMARY );
 		$conds = [
 			'rt_page' => $title->getArticleID(),
-			'rt_type' => RevTag::getType( 'fuzzy' ),
+			'rt_type' => RevTagStore::FUZZY_TAG,
 			'rt_revision' => $revisionId
 		];
 
@@ -67,24 +70,25 @@ class TranslationFuzzyUpdaterTest extends MediaWikiIntegrationTestCase {
 		$this->assertTrue( $handle->isFuzzy(), 'Message is fuzzy after database fuzzying' );
 		// Update the translation without the fuzzy string
 		$content = ContentHandler::makeContent( '$1 van $2', $title );
-		$page->doEditContent( $content, __METHOD__ );
+		$page->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertFalse( $handle->isFuzzy(), 'Message is unfuzzy after edit' );
 
 		$content = ContentHandler::makeContent( '!!FUZZY!!$1 van $2', $title );
-		$page->doEditContent( $content, __METHOD__ );
+		$page->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertTrue( $handle->isFuzzy(), 'Message is fuzzy after manual fuzzying' );
 
 		// Update the translation without the fuzzy string
 		$content = ContentHandler::makeContent( '$1 van $2', $title );
-		$page->doEditContent( $content, __METHOD__ );
+		$page->doUserEditContent( $content, $user, __METHOD__ );
 		$this->assertFalse( $handle->isFuzzy(), 'Message is unfuzzy after edit' );
 	}
 
 	public function testValidationFuzzy() {
+		$user = $this->getTestUser()->getUser();
 		$title = Title::newFromText( 'MediaWiki:nlkey/en-gb' );
-		$page = WikiPage::factory( $title );
+		$page = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $title );
 		$content = ContentHandler::makeContent( 'Test message', $title );
-		$page->doEditContent( $content, __METHOD__ );
+		$page->doUserEditContent( $content, $user, __METHOD__ );
 
 		$handle = new MessageHandle( $title );
 		$this->assertTrue( $handle->isValid(), 'Message is known' );

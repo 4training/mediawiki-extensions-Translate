@@ -9,17 +9,6 @@
 		// indexed by language code
 		languagestats: {},
 
-		/**
-		 * Checks if the input placeholder attribute
-		 * is supported on this element in this browser.
-		 *
-		 * @param {jQuery} $element
-		 * @return {boolean}
-		 */
-		isPlaceholderSupported: function ( $element ) {
-			return ( 'placeholder' in $element[ 0 ] );
-		},
-
 		// Storage for language stats loader functions from API,
 		// indexed by language code
 		languageStatsLoader: {},
@@ -30,7 +19,7 @@
 		 * @param {string} language Language code.
 		 * @return {jQuery.Deferred}
 		 */
-		loadLanguageStats: function ( language ) {
+		loadMessageGroupStatsForLanguage: function ( language ) {
 			if ( !mw.translate.languageStatsLoader[ language ] ) {
 				mw.translate.languageStatsLoader[ language ] = new mw.Api().get( {
 					action: 'query',
@@ -47,6 +36,37 @@
 		},
 
 		/**
+		 * Get language stats for a language and group from the API
+		 *
+		 * @param {string} language
+		 * @param {string} group
+		 * @return {jQuery.Deferred}
+		 */
+		loadMessageGroupStatsForItem: function ( language, group ) {
+			var uniqueKey = group + '|' + language;
+			if ( !mw.translate.languageStatsLoader[ uniqueKey ] ) {
+				mw.translate.languageStatsLoader[ uniqueKey ] = new mw.Api().get( {
+					action: 'query',
+					meta: 'languagestats',
+					lslanguage: language,
+					lsgroup: group
+				} );
+			}
+
+			mw.translate.languageStatsLoader[ uniqueKey ]
+				.done( function ( result ) {
+					if ( result.query.languagestats && result.query.languagestats.length ) {
+						mw.translate.languagestats[ language ] = result.query.languagestats;
+					} else {
+						mw.translate.languagestats[ language ] = [];
+					}
+
+				} );
+
+			return mw.translate.languageStatsLoader[ uniqueKey ];
+		},
+
+		/**
 		 * Load message group information asynchronously.
 		 *
 		 * @param {string} id Message group id
@@ -54,15 +74,13 @@
 		 * @return {jQuery.Promise} Object containing the requested properties on success.
 		 */
 		getMessageGroup: function ( id, props ) {
-			var params, api;
-
 			if ( Array.isArray( props ) ) {
 				props = props.join( '|' );
 			} else if ( props === undefined ) {
 				props = 'id|label|description|icon|priority|prioritylangs|priorityforce|workflowstates';
 			}
 
-			params = {
+			var params = {
 				meta: 'messagegroups',
 				mgformat: 'flat',
 				mgprop: props,
@@ -70,7 +88,7 @@
 				formatversion: 2
 			};
 
-			api = new mw.Api();
+			var api = new mw.Api();
 
 			return api.get( params ).then( function ( result ) {
 				return result.query.messagegroups[ 0 ];
@@ -86,12 +104,11 @@
 		 * @return {Object} Message group object
 		 */
 		findGroup: function ( id, groups ) {
-			var result;
-
 			if ( !id ) {
 				return groups;
 			}
 
+			var result;
 			groups.some( function ( group ) {
 				if ( group.id === id ) {
 					result = group;
@@ -156,8 +173,7 @@
 		 * @param {Array} regions Which regions to add the languages.
 		 */
 		addExtraLanguagesToLanguageData: function ( languages, regions ) {
-			var code;
-			for ( code in languages ) {
+			for ( var code in languages ) {
 				if ( code in $.uls.data.languages ) {
 					continue;
 				}
@@ -175,25 +191,39 @@
 			return mw.translate.dirty ||
 				// Previous editors has some unsaved edits
 				$( '.tux-status-unsaved' ).length;
+		},
+
+		/**
+		 * Return the language details for usage in HTML attributes
+		 *
+		 * @param {string} languageCode
+		 * @return {Object}
+		 */
+		getLanguageDetailsForHtml: function ( languageCode ) {
+			var languageCodeForHtml = languageCode;
+			if ( languageCode === mw.config.get( 'wgTranslateDocumentationLanguageCode' ) ) {
+				languageCodeForHtml = mw.config.get( 'wgContentLanguage' );
+			}
+
+			return {
+				code: languageCodeForHtml,
+				direction: $.uls.data.getDir( languageCodeForHtml ),
+				autonym: $.uls.data.getAutonym( languageCode )
+			};
 		}
 	} );
-
-	function pageShowHandler() {
-		$( window ).on( 'beforeunload.translate', function () {
-			if ( mw.translate.isDirty() ) {
-				// Return our message
-				return mw.msg( 'translate-js-support-unsaved-warning' );
-			}
-		} );
-	}
 
 	/**
 	 * A warning to be shown if a user tries to close the page or navigate away
 	 * from it without saving the written translation.
 	 */
 	function translateOnBeforeUnloadRegister() {
-		pageShowHandler();
-		$( window ).on( 'pageshow.translate', pageShowHandler );
+		$( window ).on( 'beforeunload', function () {
+			if ( mw.translate.isDirty() ) {
+				// Return our message
+				return mw.msg( 'translate-js-support-unsaved-warning' );
+			}
+		} );
 	}
 
 	$( function () {

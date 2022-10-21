@@ -7,18 +7,17 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\StringMatcher;
 use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\MediaWikiInsertablesSuggester;
 
 /**
  * Class which handles special definition format for %MediaWiki extensions and skins.
  */
 class PremadeMediawikiExtensionGroups {
-	/** @var bool */
-	protected $useConfigure = true;
 	/** @var string */
 	protected $idPrefix = 'ext-';
 	/** @var int */
-	protected $namespace = NS_MEDIAWIKI;
+	protected $namespace;
 	/**
 	 * @var string
 	 * @see __construct
@@ -40,17 +39,28 @@ class PremadeMediawikiExtensionGroups {
 	 */
 	public function __construct( $def, $path ) {
 		$this->definitionFile = $def;
-		$this->path = $path;
+		$this->path = rtrim( $path, '/' );
 	}
 
 	/**
-	 * Whether to use the Configure extension to load extension home pages.
+	 * Get the default namespace. Subclasses can override this.
 	 *
-	 * @since 2012-03-22
-	 * @param bool $value Whether Configure should be used.
+	 * @return int
 	 */
-	public function setUseConfigure( $value ) {
-		$this->useConfigure = $value;
+	protected function getDefaultNamespace() {
+		return NS_MEDIAWIKI;
+	}
+
+	/**
+	 * Get the namespace ID
+	 *
+	 * @return int
+	 */
+	protected function getNamespace() {
+		if ( $this->namespace === null ) {
+			$this->namespace = $this->getDefaultNamespace();
+		}
+		return $this->namespace;
 	}
 
 	/**
@@ -71,15 +81,6 @@ class PremadeMediawikiExtensionGroups {
 	 */
 	public function setNamespace( $value ) {
 		$this->namespace = $value;
-	}
-
-	/**
-	 * Makes an group id from extension name
-	 * @param string $name
-	 * @return string
-	 */
-	public static function foldId( $name ) {
-		return preg_replace( '/\s+/', '', strtolower( $name ) );
 	}
 
 	/**
@@ -110,14 +111,13 @@ class PremadeMediawikiExtensionGroups {
 		$conf = [];
 		$conf['BASIC']['class'] = MediaWikiExtensionMessageGroup::class;
 		$conf['BASIC']['id'] = $id;
-		$conf['BASIC']['namespace'] = $this->namespace;
+		$conf['BASIC']['namespace'] = $this->getNamespace();
 		$conf['BASIC']['label'] = $info['name'];
 
 		if ( isset( $info['desc'] ) ) {
 			$conf['BASIC']['description'] = $info['desc'];
 		} else {
 			$conf['BASIC']['descriptionmsg'] = $info['descmsg'];
-			$conf['BASIC']['extensionurl'] = $info['url'];
 		}
 
 		$conf['FILES']['class'] = JsonFFS::class;
@@ -168,25 +168,26 @@ class PremadeMediawikiExtensionGroups {
 
 		if ( isset( $info['languages'] ) ) {
 			$conf['LANGUAGES'] = [
-				'whitelist' => [],
-				'blacklist' => [],
+				'include' => [],
+				'exclude' => [],
 			];
 
 			foreach ( $info['languages'] as $tagSpec ) {
 				if ( preg_match( '/^([+-])?(.+)$/', $tagSpec, $m ) ) {
 					list( , $sign, $tag ) = $m;
 					if ( $sign === '+' ) {
-						$conf['LANGUAGES']['whitelist'][] = $tag;
+						$conf['LANGUAGES']['include'][] = $tag;
 					} elseif ( $sign === '-' ) {
-						$conf['LANGUAGES']['blacklist'][] = $tag;
+						$conf['LANGUAGES']['exclude'][] = $tag;
 					} else {
-						$conf['LANGUAGES']['blacklist'] = '*';
-						$conf['LANGUAGES']['whitelist'][] = $tag;
+						$conf['LANGUAGES']['exclude'] = '*';
+						$conf['LANGUAGES']['include'][] = $tag;
 					}
 				}
 			}
 		}
 
+		// @phan-suppress-next-line PhanTypeMismatchReturnSuperType
 		return MessageGroupBase::factory( $conf );
 	}
 
@@ -272,16 +273,11 @@ class PremadeMediawikiExtensionGroups {
 	}
 
 	protected function processGroups( $groups ) {
-		$configureData = $this->loadConfigureExtensionData();
 		$fixedGroups = [];
 		foreach ( $groups as $g ) {
 			$name = $g['name'];
 
-			if ( isset( $g['id'] ) ) {
-				$id = $g['id'];
-			} else {
-				$id = $this->idPrefix . preg_replace( '/\s+/', '', strtolower( $name ) );
-			}
+			$id = $g['id'] ?? $this->idPrefix . preg_replace( '/\s+/', '', strtolower( $name ) );
 
 			if ( !isset( $g['file'] ) ) {
 				$file = preg_replace( '/\s+/', '', "$name/i18n/%CODE%.json" );
@@ -289,24 +285,12 @@ class PremadeMediawikiExtensionGroups {
 				$file = $g['file'];
 			}
 
-			if ( isset( $g['descmsg'] ) ) {
-				$descmsg = $g['descmsg'];
-			} else {
-				$descmsg = str_replace( $this->idPrefix, '', $id ) . '-desc';
-			}
-
-			$configureId = self::foldId( $name );
-			if ( isset( $configureData[$configureId]['url'] ) ) {
-				$url = $configureData[$configureId]['url'];
-			} else {
-				$url = false;
-			}
+			$descmsg = $g['descmsg'] ?? str_replace( $this->idPrefix, '', $id ) . '-desc';
 
 			$newgroup = [
 				'name' => $name,
 				'file' => $file,
 				'descmsg' => $descmsg,
-				'url' => $url,
 			];
 
 			$copyvars = [
@@ -340,27 +324,5 @@ class PremadeMediawikiExtensionGroups {
 		}
 
 		return $fixedGroups;
-	}
-
-	protected function loadConfigureExtensionData() {
-		if ( !$this->useConfigure ) {
-			return [];
-		}
-
-		global $wgAutoloadClasses;
-
-		$postfix = 'Configure/load_txt_def/TxtDef.php';
-		if ( !file_exists( "{$this->path}/$postfix" ) ) {
-			return [];
-		}
-
-		$wgAutoloadClasses['TxtDef'] = "{$this->path}/$postfix";
-		// @phan-suppress-next-line PhanUndeclaredClassMethod Autoloaded above
-		$tmp = TxtDef::loadFromFile( "{$this->path}/Configure/settings/Settings-ext.txt" );
-
-		return array_combine(
-			array_map( [ __CLASS__, 'foldId' ], array_keys( $tmp ) ),
-			array_values( $tmp )
-		);
 	}
 }

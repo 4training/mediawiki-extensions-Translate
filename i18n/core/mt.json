@@ -3,7 +3,8 @@
 		"authors": [
 			"Chrisportelli",
 			"Leli Forte",
-			"Roderick Mallia"
+			"Roderick Mallia",
+			"ToniSant"
 		]
 	},
 	"translate": "Traduzzjoni",
@@ -38,7 +39,6 @@
 	"translate-edit-no-information": "''Dan il-messaġġ m'għandu l-ebda dokumentazzjoni.''\n''Jekk taf fejn jew kif jiġi wżat dan il-messaġġ, tista' tgħin lit-tradutturi l-oħra billi żżid id-dokumentazzjoni ma' dan il-messaġġ.''",
 	"translate-edit-information": "Informazzjoni dwar il-messaġġ ($1)",
 	"translate-edit-warnings": "Twissijiet dwar traduzzjonijiet mhux kompluti",
-	"translate-use-suggestion": "Biddel it-traduzzjoni attwali ma' din is-suġġeriment.",
 	"translate-edit-nopermission": "Għandek bżonn l-awtorizzazzjoni sabiex tittraduċi messaġġi.",
 	"translate-edit-askpermission": "Itlob l-awtorizzazzjoni",
 	"translate-checks-parameters": "Il-{{PLURAL:$2|parametru segwnti mhuwiex użat|parametri segwenti mhumiex użati}}:\n<strong>$1</strong>",
@@ -133,6 +133,7 @@
 	"supportedlanguages-count": "Total ta' $1 {{PLURAL:$1|lingwa|lingwi}}.",
 	"supportedlanguages-activity": "$1: $2 {{PLURAL:$2|modifika|modifiki}} - l-aħħar modifika $3 {{PLURAL:$3|ġurnata|ġranet}} ilu",
 	"translate-jssti-add": "Żid mal-lista",
+	"translate-smg-group-message-message-other-langs": "Lingwi oħra:",
 	"translate-manage-import-new": "Messaġġ ġdid $1",
 	"translate-manage-action-ignore": "Injora",
 	"importtranslations": "Importa t-traduzzjonijiet",
@@ -156,8 +157,10 @@
 	"translate-search-languagefilter": "Filtru skont il-lingwa:",
 	"translate-search-nofilter": "L-ebda filtru",
 	"translate-workflowstatus": "Stat: $1",
+	"tux-editor-in-other-languages": "F'lingwi oħra",
 	"tux-empty-list-all-guide": "Agħżel gruppi ta' messaġġi ieħor biex tittraduċi",
 	"tux-empty-list-other-guide": "Tista' tgħin tirrevedi traduzzjonijiet eżistenti",
 	"tux-empty-list-other-action": "Irrevedi t-traduzzjonijiet",
-	"tux-empty-list-other-link": "Uri l-messaġġi kollha"
+	"tux-empty-list-other-link": "Uri l-messaġġi kollha",
+	"translate-search-more-languages-info": "$1 {{PLURAL:$1|lingwa|lingwi}} oħra"
 }

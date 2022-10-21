@@ -32,7 +32,7 @@ class PersistentCacheEntry {
 		string $tag = null
 	) {
 		if ( strlen( $key ) > self::MAX_KEY_LENGTH ) {
-			throw new \InvalidArgumentException(
+			throw new InvalidArgumentException(
 				"The length of key: $key is greater than allowed " . self::MAX_KEY_LENGTH
 			);
 		}
@@ -74,5 +74,3 @@ class PersistentCacheEntry {
 		return false;
 	}
 }
-
-class_alias( PersistentCacheEntry::class, '\MediaWiki\Extensions\Translate\PersistentCacheEntry' );

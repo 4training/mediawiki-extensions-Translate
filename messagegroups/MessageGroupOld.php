@@ -11,6 +11,9 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\StringMatcher;
+use MediaWiki\Extension\Translate\TranslatorInterface\Aid\TranslationAid;
+
 /**
  * This is the interface and base implementation of unmanaged
  * message groups.
@@ -102,10 +105,6 @@ abstract class MessageGroupOld implements MessageGroup {
 		return $this->meta;
 	}
 
-	public function setMeta( $value ) {
-		$this->meta = $value;
-	}
-
 	public function getSourceLanguage() {
 		return 'en';
 	}
@@ -123,10 +122,6 @@ abstract class MessageGroupOld implements MessageGroup {
 		}
 
 		return $this->mangler;
-	}
-
-	public function setMangler( $value ) {
-		$this->mangler = $value;
 	}
 
 	public function load( $code ) {
@@ -283,51 +278,19 @@ abstract class MessageGroupOld implements MessageGroup {
 	}
 
 	/**
-	 * Unsupported stuff, just to satisfy the new interface
-	 * @param array $conf
-	 */
-	public function setConfiguration( $conf ) {
-	}
-
-	public function getConfiguration() {
-		return [];
-	}
-
-	public function getFFS() {
-		return null;
-	}
-
-	/** @deprecated Use getMessageGroupStates */
-	public function getWorkflowConfiguration() {
-		global $wgTranslateWorkflowStates;
-		if ( !$wgTranslateWorkflowStates ) {
-			// Not configured
-			$conf = [];
-		} else {
-			$conf = $wgTranslateWorkflowStates;
-		}
-
-		return $conf;
-	}
-
-	/**
 	 * Get the message group workflow state configuration.
 	 * @return MessageGroupStates
 	 */
 	public function getMessageGroupStates() {
-		// @todo Replace deprecated call.
-		$conf = $this->getWorkflowConfiguration();
+		global $wgTranslateWorkflowStates;
+		$conf = $wgTranslateWorkflowStates ?: [];
 
 		Hooks::run( 'Translate:modifyMessageGroupStates', [ $this->getId(), &$conf ] );
 
 		return new MessageGroupStates( $conf );
 	}
 
-	/**
-	 * Get all the translatable languages for a group, considering the whitelisting
-	 * and blacklisting.
-	 * @return array|null The language codes as array keys.
-	 */
+	/** @inheritDoc */
 	public function getTranslatableLanguages() {
 		return null;
 	}
@@ -350,5 +313,9 @@ abstract class MessageGroupOld implements MessageGroup {
 	 */
 	public function getTranslationAids() {
 		return TranslationAid::getTypes();
+	}
+
+	public function getSupportConfig(): ?array {
+		return null;
 	}
 }

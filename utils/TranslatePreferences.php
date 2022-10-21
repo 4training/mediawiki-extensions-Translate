@@ -9,6 +9,10 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\Utilities\HTMLJsSelectToInputField;
+use MediaWiki\Extension\Translate\Utilities\JsSelectToInput;
+use MediaWiki\MediaWikiServices;
+
 /**
  * Class to add Translate specific preference settings.
  */
@@ -27,7 +31,7 @@ class TranslatePreferences {
 		// Set target ID.
 		$select->setTargetId( 'mw-input-translate-editlangs' );
 		// Get available languages.
-		$languages = Language::fetchLanguageNames();
+		$languages = MediaWikiServices::getInstance()->getLanguageNameUtils()->getLanguageNames();
 
 		$preferences['translate-editlangs'] = [
 			'class' => HTMLJsSelectToInputField::class,
@@ -48,15 +52,8 @@ class TranslatePreferences {
 	 * @return JsSelectToInput
 	 */
 	protected static function languageSelector() {
-		if ( is_callable( [ LanguageNames::class, 'getNames' ] ) ) {
-			$lang = RequestContext::getMain()->getLanguage();
-			$languages = LanguageNames::getNames( $lang->getCode(),
-				LanguageNames::FALLBACK_NORMAL
-			);
-		} else {
-			$languages = Language::fetchLanguageNames();
-		}
-
+		$lang = RequestContext::getMain()->getLanguage();
+		$languages = MediaWikiServices::getInstance()->getLanguageNameUtils()->getLanguageNames( $lang->getCode() );
 		ksort( $languages );
 
 		$selector = new XmlSelect( false, 'mw-language-selector' );

@@ -9,6 +9,8 @@
  */
 
 // Standard boilerplate to define $IP
+
+use MediaWiki\Extension\Translate\MessageGroupProcessing\RevTagStore;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\SlotRecord;
 
@@ -48,7 +50,7 @@ class PopulateFuzzy extends Maintenance {
 		}
 
 		$dbw = MediaWikiServices::getInstance()->getDBLoadBalancer()
-			->getMaintenanceConnectionRef( DB_MASTER );
+			->getMaintenanceConnectionRef( DB_PRIMARY );
 		$revStore = MediaWikiServices::getInstance()->getRevisionStore();
 		$queryInfo = $revStore->getQueryInfo( [ 'page' ] );
 
@@ -74,23 +76,20 @@ class PopulateFuzzy extends Maintenance {
 				break;
 			}
 
-			$slots = [];
-			if ( is_callable( [ $revStore, 'getContentBlobsForBatch' ] ) ) {
-				$slots = $revStore->getContentBlobsForBatch( $res, [ SlotRecord::MAIN ] )->getValue();
-			}
+			$slots = $revStore->getContentBlobsForBatch( $res, [ SlotRecord::MAIN ] )->getValue();
 			foreach ( $res as $r ) {
 				if ( isset( $slots[$r->rev_id] ) ) {
 					$text = $slots[$r->rev_id][SlotRecord::MAIN]->blob_data;
 				} else {
-					$text = $revStore->newRevisionFromRow( $r )
-						->getContent( SlotRecord::MAIN )
-						->getNativeData();
+					$content = $revStore->newRevisionFromRow( $r )
+						->getContent( SlotRecord::MAIN );
+					$text = TranslateUtils::getTextFromTextContent( $content );
 				}
 				if ( strpos( $text, TRANSLATE_FUZZY ) !== false ) {
 					$inserts[] = [
 						'rt_page' => $r->page_id,
 						'rt_revision' => $r->rev_id,
-						'rt_type' => RevTag::getType( 'fuzzy' ),
+						'rt_type' => RevTagStore::FUZZY_TAG
 					];
 				}
 			}
@@ -98,7 +97,7 @@ class PopulateFuzzy extends Maintenance {
 			$offset += $limit;
 
 			if ( $inserts ) {
-				$dbw->replace( 'revtag', 'rt_type_page_revision', $inserts, __METHOD__ );
+				$dbw->replace( 'revtag', [ [ 'rt_type', 'rt_page', 'rt_revision' ] ], $inserts, __METHOD__ );
 			}
 		}
 	}

@@ -14,8 +14,10 @@ namespace MediaWiki\Extension\Translate\Validation;
 use Exception;
 use FormatJson;
 use InvalidArgumentException;
+use MediaWiki\Extension\Translate\Services;
 use MediaWiki\Extension\Translate\TranslatorInterface\Insertable\InsertablesSuggester;
 use PHPVariableLoader;
+use RuntimeException;
 use TMessage;
 
 /**
@@ -104,7 +106,8 @@ class ValidationRunner {
 			'instance' => $validator,
 			'insertable' => $isInsertable,
 			'enforce' => $validatorConfig['enforce'] ?? false,
-			'keymatch' => $validatorConfig['keymatch'] ?? false,
+			'include' => $validatorConfig['keymatch'] ?? $validatorConfig['include'] ?? false,
+			'exclude' => $validatorConfig['exclude'] ?? false
 		];
 	}
 
@@ -115,7 +118,7 @@ class ValidationRunner {
 	 */
 	public function getValidators(): array {
 		return array_map(
-			function ( $validator ) {
+			static function ( $validator ) {
 				return $validator['instance'];
 			},
 			$this->validators
@@ -163,8 +166,8 @@ class ValidationRunner {
 			);
 		}
 
-		$errors = $this->filterValidations( $errors, $code );
-		$warnings = $this->filterValidations( $warnings, $code );
+		$errors = $this->filterValidations( $message->key(), $errors, $code );
+		$warnings = $this->filterValidations( $message->key(), $warnings, $code );
 
 		return new ValidationResult( $errors, $warnings );
 	}
@@ -188,8 +191,8 @@ class ValidationRunner {
 				$ignoreWarnings
 			);
 
-			$errors = $this->filterValidations( $errors, $code );
-			$warnings = $this->filterValidations( $warnings, $code );
+			$errors = $this->filterValidations( $message->key(), $errors, $code );
+			$warnings = $this->filterValidations( $message->key(), $warnings, $code );
 
 			if ( $warnings->hasIssues() || $errors->hasIssues() ) {
 				break;
@@ -201,18 +204,24 @@ class ValidationRunner {
 
 	/** @internal Should only be used by tests and inside this class. */
 	public static function reloadIgnorePatterns(): void {
-		global $wgTranslateCheckBlacklist;
+		$validationExclusionFile = Services::getInstance()->getConfigHelper()->getValidationExclusionFile();
 
-		if ( $wgTranslateCheckBlacklist === false ) {
+		if ( $validationExclusionFile === false ) {
 			self::$ignorePatterns = [];
 			return;
 		}
 
 		$list = PHPVariableLoader::loadVariableFromPHPFile(
-			$wgTranslateCheckBlacklist,
-			'checkBlacklist'
+			$validationExclusionFile,
+			'validationExclusionList'
 		);
 		$keys = [ 'group', 'check', 'subcheck', 'code', 'message' ];
+
+		if ( $list && !is_array( $list ) ) {
+			throw new InvalidArgumentException(
+				"validationExclusionList defined in $validationExclusionFile must be an array"
+			);
+		}
 
 		foreach ( $list as $key => $pattern ) {
 			foreach ( $keys as $checkKey ) {
@@ -235,6 +244,7 @@ class ValidationRunner {
 
 	/** Filter validations based on a ignore list. */
 	private function filterValidations(
+		string $messageKey,
 		ValidationIssues $issues,
 		string $targetLanguage
 	): ValidationIssues {
@@ -242,7 +252,7 @@ class ValidationRunner {
 
 		foreach ( $issues as $issue ) {
 			foreach ( self::$ignorePatterns as $pattern ) {
-				if ( $this->shouldIgnore( $issue, $this->groupId, $targetLanguage, $pattern ) ) {
+				if ( $this->shouldIgnore( $messageKey, $issue, $this->groupId, $targetLanguage, $pattern ) ) {
 					continue 2;
 				}
 			}
@@ -253,6 +263,7 @@ class ValidationRunner {
 	}
 
 	private function shouldIgnore(
+		string $messageKey,
 		ValidationIssue $issue,
 		string $messageGroupId,
 		string $targetLanguage,
@@ -261,7 +272,7 @@ class ValidationRunner {
 		return $this->matchesIgnorePattern( $pattern['group'], $messageGroupId )
 			&& $this->matchesIgnorePattern( $pattern['check'], $issue->type() )
 			&& $this->matchesIgnorePattern( $pattern['subcheck'], $issue->subType() )
-			&& $this->matchesIgnorePattern( $pattern['message'], $issue->messageKey() )
+			&& $this->matchesIgnorePattern( $pattern['message'], $messageKey )
 			&& $this->matchesIgnorePattern( $pattern['code'], $targetLanguage );
 	}
 
@@ -284,8 +295,7 @@ class ValidationRunner {
 
 	/**
 	 * Check if key matches validator's key patterns.
-	 *
-	 * Only relevant if the 'keymatch' option is specified in the validator.
+	 * Only relevant if the 'include' or 'exclude' option is specified in the validator.
 	 *
 	 * @param string $key
 	 * @param string[] $keyMatches
@@ -349,8 +359,13 @@ class ValidationRunner {
 		}
 
 		try {
-			$keyMatches = $validatorData['keymatch'];
-			if ( $keyMatches !== false && !$this->doesKeyMatch( $message->key(), $keyMatches ) ) {
+			$includedKeys = $validatorData['include'];
+			if ( $includedKeys !== false && !$this->doesKeyMatch( $message->key(), $includedKeys ) ) {
+				return;
+			}
+
+			$excludedKeys = $validatorData['exclude'];
+			if ( $excludedKeys !== false && $this->doesKeyMatch( $message->key(), $excludedKeys ) ) {
 				return;
 			}
 
@@ -361,12 +376,10 @@ class ValidationRunner {
 			}
 			// else: caller does not want warnings, skip running the validator
 		} catch ( Exception $e ) {
-			throw new \RuntimeException(
+			throw new RuntimeException(
 				'An error occurred while validating message: ' . $message->key() . '; group: ' .
 				$this->groupId . "; validator: " . get_class( $validator ) . "\n. Exception: $e"
 			);
 		}
 	}
 }
-
-class_alias( ValidationRunner::class, '\MediaWiki\Extensions\Translate\ValidationRunner' );

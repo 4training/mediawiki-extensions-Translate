@@ -162,14 +162,6 @@ class ThinMessage extends TMessage {
 			return $this->infile();
 		}
 
-		if ( $this->translation === null ) {
-			// Should only happen with MW < 1.34. Slow if the text table hasn't been joined in!
-			$text = Revision::getRevisionText( $this->row );
-			if ( $text !== false ) {
-				$this->translation = $text;
-			}
-		}
-
 		return $this->translation;
 	}
 

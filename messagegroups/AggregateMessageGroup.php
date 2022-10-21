@@ -5,6 +5,8 @@
  * @license GPL-2.0-or-later
  */
 
+use MediaWiki\Extension\Translate\MessageProcessing\StringMatcher;
+
 /**
  * Groups multiple message groups together as one group.
  *
@@ -20,16 +22,13 @@ class AggregateMessageGroup extends MessageGroupBase {
 	/** @inheritDoc */
 	public function exists() {
 		// Group exists if there are any subgroups.
-		$exists = (bool)$this->conf['GROUPS'];
-
-		return $exists;
+		return (bool)$this->conf['GROUPS'];
 	}
 
 	/** @inheritDoc */
 	public function load( $code ) {
 		$messages = [];
 
-		/** @var $group MessageGroup */
 		foreach ( $this->getGroups() as $group ) {
 			$messages += $group->load( $code );
 		}
