@@ -574,13 +574,13 @@ class TranslateHooks implements RevisionRecordInsertedHook {
 	}
 
     /**
-     * #custom4training: Reduce the available languages to translate to                                                                                                                                            
+     * #custom4training: Reduce the available languages to translate to
      * TODO: is that safe PHP programming? Could that be more elegant?
      * @param array &$names
      * @param string $code
      */
     public static function custom4training( array &$names, $code ) {
-        $availableLanguages = array('de','en','tr','sq','fa','ar','ku','ku-sinj','ru','ru-cars','ss','pt','pt-br','ms','es','fr','ro','hu','ur','vi','ur','pl','cs','id','zh','ko','bg','it','az','sw','ps','rn','sk','sl','hr','te','ka','uk','ky','et','ti','xh','af','sv','ckb','tr-tanri','ta','th','uz','uz-cyrl','ar-urdun','ha','hi','ml','kn','nl','sr','nb');
+        $availableLanguages = array('de','en','tr','sq','fa','ar','ku','ku-sinj','ru','ru-cars','ss','pt','pt-br','ms','es','fr','ro','hu','ur','vi','ur','pl','cs','id','zh','ko','bg','it','az','sw','ps','rn','sk','sl','hr','te','ka','uk','ky','et','ti','xh','af','sv','ckb','tr-tanri','ta','th','uz','uz-cyrl','ar-urdun','ha','hi','ml','kn','nl','sr','nb','lg');
         foreach ($names as $code => $value) {
             if (!in_array($code, $availableLanguages))
                 unset($names[$code]);
